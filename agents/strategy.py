@@ -13,7 +13,7 @@ import json
 from pathlib import Path
 
 AGENT_NAME = "agent.strategy"
-SYSTEM_PROMPT = Path(__file__).with_name("agent_strategy.md").read_text()
+SYSTEM_PROMPT = Path(__file__).with_name("agent_strategy.md").read_text(encoding="utf-8")
 
 FIXED_AXES = ["기능", "수익모델", "온보딩", "불편지점"]
 

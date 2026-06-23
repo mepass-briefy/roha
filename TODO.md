@@ -2,7 +2,7 @@
 
 ## 실행 환경
 
-1. T0. Windows 기본 코덱(cp949) 환경에서 `Path.read_text()`(인코딩 미지정)가 UTF-8 한국어 파일에서 UnicodeDecodeError를 낸다. 해당 지점: orchestrator.py(보호 파일, 저장 파일 읽기), agents/strategy.py(agent_strategy.md 읽기), agents/demo_strategy.py·demo.py(워크플로 JSON 읽기). 현재 회피: `PYTHONUTF8=1` 환경변수로 실행(소스 미수정). 검증 완료: 이 모드에서 demo.py·demo_ux.py exit 0. 근본 수정(read_text(encoding="utf-8"))은 orchestrator.py 버그 수정 범위지만 보호 파일이라 사용자 승인 후 진행.
+1. T0. [완료] Windows 기본 코덱(cp949) 환경에서 텍스트 I/O(인코딩 미지정)가 UTF-8 한국어 파일에서 UnicodeDecodeError를 냈다. 수정(사용자 승인, 버그 수정): orchestrator.py의 read_text·write_text·events open("a")에 encoding="utf-8" 추가, agents/strategy.py의 agent_strategy.md read_text에 encoding="utf-8" 추가(agents/ux.py는 처음부터 utf-8). 검증: PYTHONUTF8 없이 demo.py·demo_ux.py 둘 다 exit 0 실측 확인.
 
 ## Strategy Agent
 

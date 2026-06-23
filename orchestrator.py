@@ -43,11 +43,11 @@ class Store:
         if not self.seq_path.exists():
             self._write_json(self.seq_path, {"seq": 1000})
         if not self.events_path.exists():
-            self.events_path.write_text("")
+            self.events_path.write_text("", encoding="utf-8")
 
     # ---- 저수준 ----
     def _write_json(self, path: Path, obj):
-        path.write_text(json.dumps(obj, ensure_ascii=False, indent=2))
+        path.write_text(json.dumps(obj, ensure_ascii=False, indent=2), encoding="utf-8")
 
     def _read_json(self, path: Path):
         return json.loads(path.read_text(encoding="utf-8"))
@@ -104,7 +104,7 @@ class Store:
             "actor": actor,
             "ts": round(time.time(), 3),
         }
-        with self.events_path.open("a") as f:
+        with self.events_path.open("a", encoding="utf-8") as f:
             f.write(json.dumps(ev, ensure_ascii=False) + "\n")
         return ev
 
