@@ -1,0 +1,29 @@
+{
+  "pk": 1011,
+  "project_pk": 41,
+  "node_id": "n3",
+  "produces_type": "ux",
+  "workflow_ver": 2,
+  "input_refs": [
+    {
+      "type": "intake",
+      "pk": 1002,
+      "version": 1,
+      "version_pk": 1001
+    },
+    {
+      "type": "strategy",
+      "pk": 1006,
+      "version": 1,
+      "version_pk": 1007
+    }
+  ],
+  "run_status": "succeeded",
+  "attempt": 1,
+  "model_id": "mock-deterministic-1",
+  "agent_version": "0.1",
+  "prompt_version": "1",
+  "input_tokens": 0,
+  "output_tokens": 0,
+  "cost_usd": 0.0
+}

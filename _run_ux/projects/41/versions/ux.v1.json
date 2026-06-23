@@ -1,0 +1,92 @@
+{
+  "pk": 1015,
+  "type": "ux",
+  "record_pk": 1014,
+  "version": 1,
+  "body": {
+    "primary_tasks": [
+      {
+        "task": "개인 신청",
+        "source_requirement": "개인 신청",
+        "origin": "fact"
+      },
+      {
+        "task": "매치 예약",
+        "source_requirement": "매치 예약",
+        "origin": "fact"
+      },
+      {
+        "task": "정산 확인",
+        "source_requirement": "정산 확인",
+        "origin": "fact"
+      }
+    ],
+    "user_flows": [
+      {
+        "task": "개인 신청",
+        "steps": [
+          "진입",
+          "개인 신청 수행",
+          "확인",
+          "완료"
+        ]
+      },
+      {
+        "task": "매치 예약",
+        "steps": [
+          "진입",
+          "매치 예약 수행",
+          "확인",
+          "완료"
+        ]
+      },
+      {
+        "task": "정산 확인",
+        "steps": [
+          "진입",
+          "정산 확인 수행",
+          "확인",
+          "완료"
+        ]
+      }
+    ],
+    "information_architecture": [
+      {
+        "screen": "메인",
+        "purpose": "핵심 태스크 진입점",
+        "tasks": [
+          "개인 신청",
+          "매치 예약",
+          "정산 확인"
+        ]
+      }
+    ],
+    "ux_principles": [
+      "매니저 배정 자동화을(를) 사용자 흐름에서 우선 노출",
+      "정산 투명성을(를) 사용자 흐름에서 우선 노출",
+      "풋살 소셜매치 예약 영역에서 경쟁사 공통 미해결로 추정되는 지점(실데이터 검증 필요) × 매니저 배정 자동화을(를) 사용자 흐름에서 우선 노출",
+      "풋살 소셜매치 예약 영역에서 경쟁사 공통 미해결로 추정되는 지점(실데이터 검증 필요) × 정산 투명성을(를) 사용자 흐름에서 우선 노출"
+    ],
+    "open_questions": [],
+    "provenance": {
+      "primary_tasks": "fact",
+      "user_flows": "inference",
+      "information_architecture": "inference",
+      "ux_principles": "inference"
+    }
+  },
+  "body_hash": "f49b7977a7b7742e",
+  "derived_from": [
+    {
+      "parent_record_pk": 1002,
+      "parent_version": 1,
+      "parent_version_pk": 1001
+    },
+    {
+      "parent_record_pk": 1006,
+      "parent_version": 1,
+      "parent_version_pk": 1007
+    }
+  ],
+  "produced_by_run": 1011
+}

@@ -1,0 +1,25 @@
+{
+  "pk": 1001,
+  "type": "intake",
+  "record_pk": 1002,
+  "version": 1,
+  "body": {
+    "site_character": "풋살 소셜매치 예약",
+    "requirements": [
+      "개인 신청",
+      "매치 예약",
+      "정산 확인"
+    ],
+    "seed_competitors": [
+      "PLAB",
+      "아이엠그라운드"
+    ],
+    "unique_angles": [
+      "매니저 배정 자동화",
+      "정산 투명성"
+    ]
+  },
+  "body_hash": "d2c2d44b0bcf1ca7",
+  "derived_from": [],
+  "produced_by_run": null
+}

@@ -1,0 +1,70 @@
+{
+  "pk": 1007,
+  "type": "strategy",
+  "record_pk": 1006,
+  "version": 1,
+  "body": {
+    "competitors": [
+      {
+        "name": "PLAB",
+        "source_url": "provided_in_intake",
+        "axes": {
+          "기능": null,
+          "수익모델": null,
+          "온보딩": null,
+          "불편지점": null
+        }
+      },
+      {
+        "name": "아이엠그라운드",
+        "source_url": "provided_in_intake",
+        "axes": {
+          "기능": null,
+          "수익모델": null,
+          "온보딩": null,
+          "불편지점": null
+        }
+      }
+    ],
+    "market_gaps": [
+      "풋살 소셜매치 예약 영역에서 경쟁사 공통 미해결로 추정되는 지점(실데이터 검증 필요)"
+    ],
+    "unique_angles": [
+      "매니저 배정 자동화",
+      "정산 투명성"
+    ],
+    "wow_points": [
+      "풋살 소셜매치 예약 영역에서 경쟁사 공통 미해결로 추정되는 지점(실데이터 검증 필요) × 매니저 배정 자동화",
+      "풋살 소셜매치 예약 영역에서 경쟁사 공통 미해결로 추정되는 지점(실데이터 검증 필요) × 정산 투명성"
+    ],
+    "options": [
+      {
+        "label": "A",
+        "rationale": "풋살 소셜매치 예약 핵심 기능 집중",
+        "tradeoffs": "차별점 약함"
+      },
+      {
+        "label": "B",
+        "rationale": "와우포인트 중심 차별화",
+        "tradeoffs": "구현 비용 큼"
+      }
+    ],
+    "chosen": null,
+    "provenance": {
+      "competitors": "fact",
+      "market_gaps": "inference",
+      "unique_angles": "human",
+      "wow_points": "inference",
+      "options": "inference"
+    }
+  },
+  "body_hash": "254e74c22307fcec",
+  "derived_from": [
+    {
+      "parent_record_pk": 1002,
+      "parent_version": 1,
+      "parent_version_pk": 1001
+    }
+  ],
+  "produced_by_run": 1003
+}

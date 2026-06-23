@@ -1,0 +1,23 @@
+{
+  "pk": 1003,
+  "project_pk": 41,
+  "node_id": "n2",
+  "produces_type": "strategy",
+  "workflow_ver": 2,
+  "input_refs": [
+    {
+      "type": "intake",
+      "pk": 1002,
+      "version": 1,
+      "version_pk": 1001
+    }
+  ],
+  "run_status": "succeeded",
+  "attempt": 1,
+  "model_id": "mock-deterministic-1",
+  "agent_version": "0.1",
+  "prompt_version": "1",
+  "input_tokens": 0,
+  "output_tokens": 0,
+  "cost_usd": 0.0
+}

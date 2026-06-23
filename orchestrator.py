@@ -50,7 +50,7 @@ class Store:
         path.write_text(json.dumps(obj, ensure_ascii=False, indent=2))
 
     def _read_json(self, path: Path):
-        return json.loads(path.read_text())
+        return json.loads(path.read_text(encoding="utf-8"))
 
     def next_pk(self) -> int:
         s = self._read_json(self.seq_path)
@@ -109,9 +109,9 @@ class Store:
         return ev
 
     def events(self):
-        if not self.events_path.read_text().strip():
+        if not self.events_path.read_text(encoding="utf-8").strip():
             return []
-        return [json.loads(l) for l in self.events_path.read_text().splitlines() if l.strip()]
+        return [json.loads(l) for l in self.events_path.read_text(encoding="utf-8").splitlines() if l.strip()]
 
 
 class Orchestrator:

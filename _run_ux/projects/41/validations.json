@@ -1,0 +1,20 @@
+[
+  {
+    "record_version_pk": 1007,
+    "parent_record_pk": 1002,
+    "parent_version_pinned": 1,
+    "parent_version_validated": 1
+  },
+  {
+    "record_version_pk": 1015,
+    "parent_record_pk": 1002,
+    "parent_version_pinned": 1,
+    "parent_version_validated": 1
+  },
+  {
+    "record_version_pk": 1015,
+    "parent_record_pk": 1006,
+    "parent_version_pinned": 1,
+    "parent_version_validated": 1
+  }
+]
