@@ -1,0 +1,23 @@
+{
+  "workflow_key": "site-build",
+  "version": 3,
+  "status": "active",
+  "nodes": [
+    {
+      "node_id": "n1",
+      "agent": "human",
+      "produces": "intake",
+      "depends_on": [],
+      "gate": "human",
+      "on_upstream_change": "manual_rerun"
+    },
+    {
+      "node_id": "n2",
+      "agent": "agent.security",
+      "produces": "security",
+      "depends_on": ["n1"],
+      "gate": "human",
+      "on_upstream_change": "manual_rerun"
+    }
+  ]
+}
