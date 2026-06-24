@@ -1,95 +1,108 @@
 # 진행 상태 (STATUS)
 
-하네스 구현 진행 상태 정리 문서다. 이 문서는 정리용이며 구현·정책을 바꾸지 않는다. 설계는 CLAUDE.md와 docs/harness-ddl-v2.md를 따른다.
+하네스 구현 진행 상태 정리 문서다. 정리용이며 구현·정책을 바꾸지 않는다. 설계는 CLAUDE.md와 docs/harness-ddl-v2.md를 따른다. 아래 내용은 실측(파일 존재·git log·demo 실행) 기반이다.
 
 ## 1. 완료된 에이전트·게이트
 
-모든 에이전트는 7절 표준 형태(agent_*.md + *.py + demo_*.py)로 구현됐고, 각 demo는 PYTHONUTF8 없이 exit 0으로 검증됐다. producer 반환은 모두 dict이며 orchestrator의 canonical 비교(No Impact)와 호환된다. orchestrator.py는 인코딩 버그 수정 외 변경하지 않았다.
+각 에이전트는 표준 형태(agent_*.md + *.py + demo_*.py) 3파일이 존재하며, demo는 PYTHONUTF8 없이 exit 0으로 검증됐다. producer 반환은 모두 dict이고 orchestrator canonical 비교(No Impact)와 호환된다. orchestrator.py는 인코딩 버그 수정 외 변경하지 않았다.
 
-### 1.1 정의 단계 (6)
+### 1.1 정의 단계 (6종)
 
 | 에이전트 | 입력 | 산출 | 도입 커밋 |
 |---|---|---|---|
-| strategy | intake | competitors/market_gaps/options 등 | 0cd8e10 (이후 41b85e8 인코딩) |
-| ux | intake, strategy | primary_tasks/user_flows/IA | 8d5efcb (이후 41b85e8) |
+| strategy | intake | competitors/market_gaps/options | 0cd8e10 (41b85e8 인코딩) |
+| ux | intake, strategy | primary_tasks/user_flows/IA | 8d5efcb (41b85e8) |
 | security | intake | security_requirements/data_classification/threat_model | b3aefa4 |
-| design_system | intake, strategy, ux | color/typography/spacing/component_specs/CSS 변수 | 98856b7 |
+| design_system | intake, strategy, ux | Material 3 tonal(color/surface/semantic/component/governance) + tokens traceability | 98856b7, 재정의 a9cf47a |
 | features | intake, strategy, ux, security | features(+acceptance, security_controls 매핑) | 8b2230f |
 | wireframe | ux, design_system, features | screens/sections/navigation | 46a8e3c |
 
-### 1.2 구축 단계 (3)
+### 1.2 구축 단계 (3종)
 
 | 에이전트 | 입력 | 산출 | 도입 커밋 |
 |---|---|---|---|
-| backend | features, security | api_spec(endpoints) + artifact(route stub) | bfaa22b (+ exposure 29c9858, requirements 1766854) |
-| frontend | wireframe, design_system, backend | screens(data_calls/outcome_mapping) + artifact | c418f77 (+ 전파 2316fc4) |
+| backend | features, security | api_spec(endpoints) + artifact(route stub) | bfaa22b (exposure 29c9858, requirements 1766854) |
+| frontend | wireframe, design_system, backend | screens + artifact + open_question 전파 | c418f77 (전파 2316fc4) |
 | mobile | wireframe, design_system, backend | screens + 모바일 요소(터치/다크/safe area) + artifact | 61418df |
 
-backend/frontend/mobile은 Pydantic으로 응답을 구조화·검증한다. 나머지 에이전트는 validate()의 if문으로 계약을 강제한다(차이는 BACKLOG B2).
+backend/frontend/mobile은 Pydantic으로 응답을 구조화·검증한다. 나머지는 validate()의 if문으로 계약을 강제한다(BACKLOG B2).
 
-### 1.3 게이트 (2)
+### 1.3 게이트 (2종)
 
 | 게이트 | 성격 | 도입 커밋 |
 |---|---|---|
 | gate_test | '도는가'(dict 구조, Pydantic 검증, artifact 파일 존재, demo exit code) | 9df55ec |
-| gate_review | '계약을 지켰는가'(각 에이전트 validate()/모델 계약만 재사용) | 9df55ec |
+| gate_review | '계약을 지켰는가'(각 에이전트 validate()/모델 계약) + design_system 토큰 traceability 검사 | 9df55ec, traceability 78308fe·3f6f451 |
 
-게이트는 producer가 아니라 검사기다. workflow 노드로 등록하지 않으며, producer 완료 후 명시적으로 호출한다. 결과 등급은 PASS/WARN/FAIL 3단계이고, FAIL이어도 재생성 루프를 돌리지 않는다.
+gate_review의 design_system traceability 검사: 모든 토큰 token_key/value/origin 존재, reference-* origin은 source_reference_id 존재, baseline origin은 source 없음. 위반 시 FAIL + 토큰 명시. 단일 산출물 범위이며 frontend·mobile 전파 교차검사는 하지 않는다(B5).
+
+게이트는 producer가 아니라 검사기다. workflow 노드로 등록하지 않으며, producer 완료 후 명시적으로 호출한다. 등급은 PASS/WARN/FAIL 3단계, FAIL이어도 재생성 루프를 돌리지 않는다.
 
 ### 1.4 워크플로 버전
 
-워크플로는 버전 핀 설정이며 누적으로 추가됐다. v1(strategy/policy 검증) ~ v9(mobile 포함 전체 파이프라인). 기존 버전과 데모는 수정하지 않고 새 버전을 추가하는 방식으로 노드를 결합했다.
+v1(strategy/policy 검증) ~ v9(mobile 포함). 기존 버전·데모를 수정하지 않고 새 버전을 추가하는 방식으로 노드를 결합했다.
 
-## 2. 보류 / BACKLOG
+## 2. 현재 전파 상태
 
-| 번호 | 항목 | 성격 |
-|---|---|---|
-| B1 | producer 계약이 실행 메타(model_id/tokens/cost)를 runs에 싣지 못함 | 계약 확장(구조 변경) |
-| B2 | 검증 방식 Pydantic 공통 모듈로 통일(현재 backend/frontend/mobile만 Pydantic, 나머지는 if문) | 구조 변경 |
-| B3 | 외부 공개(exposure=public) endpoint의 인증·rate limit. 현재 endpoint는 전부 internal | 정책·구조 변경 |
-| B4 | 게이트 결과의 orchestrator 훅 연결 + FAIL 시 되돌림(Performance Outcomes) | 구조·정책 변경 |
-| B5 | Review Gate의 파이프라인 교차(전파) 검사. 상위 open_question 하위 전파 여부, Silent Omission 탐지, 전파 누락 시 FAIL | 구조 확장 |
+design_system 재정의(a9cf47a)로 산출 구조가 바뀌었다(color_tokens/component_specs 평면 구조 -> Material 3 레이어 + tokens 단위 traceability). 이로 인해 design_system을 입력으로 받는 frontend·mobile은 현재 stale 상태다.
 
-추가 보류 사항
-
-1. 디자인 시스템 값 확정: 의미색(warning/danger) 등 브랜드 토큰 미제공분은 표준값 제안 + open_questions 상태. 사람 확정 필요.
-2. real 모드 전환: 아래 3절.
-3. B 트랙(셀프서비스 제품): 현재 A 트랙(파일 기반 메커니즘 검증) 위에 얹는 단계. 메커니즘 검증 완료 후 진행.
+1. 정상이며 의도된 결과다. design_system만 닫고 전파된 stale은 그대로 둔다.
+2. 미해소다. frontend·mobile이 새 design_system 구조(tokens/foundation)를 읽도록 갱신·재실행해야 해소된다.
+3. 게이트 demo(demo_gate)는 이 stale을 반영해, frontend가 빈 산출이면 frontend 위반 주입을 스킵하도록 가드돼 있다.
 
 ## 3. 현재 전부 offline Mock
 
-모든 에이전트는 `llm(system, user) -> str`(또는 backend/frontend/mobile은 `llm(prompt) -> str`) 인터페이스로 모델 호출을 분리해 두었고, 현재 데모는 전부 offline 결정적 Mock으로 동작한다. 외부 web 호출이 없으며 산출은 재현 가능(canonical 동일)하다.
+모든 에이전트는 모델 호출을 `llm(...) -> str` 인터페이스로 분리해 두었고, 현재 데모는 전부 offline 결정적 Mock으로 동작한다. 외부 web 호출이 없고 산출은 재현 가능(canonical 동일)하다. 교체 지점은 각 에이전트 make_producer(llm=real_llm)이며 구조 변경 없이 클로저 주입으로 처리된다.
 
-real 모드(web_search 가능한 Claude 서브에이전트)로 llm을 교체하면 채워질 부분
+real 모드 전환 시 채워질 부분
 
-1. strategy: competitors.axes(기능/수익모델/온보딩/불편지점)와 market_gaps를 실데이터로 채움(현재 seed_competitors만, placeholder는 provenance=inference로 정직 표기).
-2. design_system: positioning/ux_principles를 반영한 브랜드 톤 구성. 현재는 brand_tokens 입력 + 결정적 파생.
-3. backend: POST 요청 본문 필드 등 도메인 스키마(현재 open_questions). 도메인 특수 case(409 등) 근거 판단.
-4. frontend/mobile: 실제 화면 코드(현재 artifact는 스텁). loading/empty 등 상태 구현 근거 판단.
-5. 교체 지점은 각 에이전트 make_producer(llm=real_llm)이며, 구조 변경 없이 클로저 주입으로 처리된다.
+1. strategy: 경쟁사 리서치(web_search)로 competitors.axes·market_gaps를 실데이터로 채움. 현재는 seed_competitors만, placeholder는 provenance=inference로 정직 표기.
+2. features: 핵심 기능에서 세부 기능으로 펼침(현재는 ux 태스크 1:1 + 와우포인트 보완).
+3. design_system: 도메인 시드 도출(strategy.positioning 도메인 식별 -> 한국 상위 서비스 주색 web_search 분석). 현재는 reference token 즉시 적용 + Material baseline fallback, image/url은 open_questions.
 
-## 4. open_questions 현황 (성격별 분류)
+## 4. BACKLOG 현황 (B1~B5)
 
-각 에이전트 산출의 open_questions는 무시·생략 없이 기록된다(frontend/mobile은 상위 전파분과 explicit_not_implemented까지 포함). 성격별 분류는 다음과 같다.
+| 번호 | 내용 요약 | 성격 |
+|---|---|---|
+| B1 | producer 계약이 실행 메타(model_id/tokens/cost)를 runs에 싣지 못함. 계약을 producer(inputs)->(body, run_meta)로 확장 필요 | 계약 확장 |
+| B2 | 검증 방식 Pydantic 공통 모듈로 통일. 현재 backend/frontend/mobile만 Pydantic, 나머지는 if문 | 구조 변경 |
+| B3 | 외부 공개(exposure=public) endpoint의 인증·rate limit. 현재 endpoint는 전부 internal | 정책·구조 변경 |
+| B4 | 게이트 결과의 orchestrator 훅 연결 + FAIL 시 되돌림(Performance Outcomes) | 구조·정책 변경 |
+| B5 | Review Gate의 파이프라인 교차(전파) 검사. 상위 open_question 하위 전파 여부, Silent Omission 탐지, 전파 누락 시 FAIL. 게이트가 다중 record를 받는 구조 확장 | 구조 확장 |
 
-### 4.1 입력 부족으로 못 정한 것
+추가 보류: design_system real 모드 도메인 시드 도출과 image/url 분석(B 트랙·real LLM 선행).
 
-1. design_system: 의미색 warning/danger 미제공(brand_tokens에 없음). 표준값 제안 + 확인 필요.
-2. backend: POST 요청 본문 필드 미정(applications/reservations/settlements). 도메인 입력 필요.
-3. mobile: safe-area 근거가 design_system/wireframe에 없음. 미적용.
+## 5. open_questions 현황 (성격별 분류)
 
-### 4.2 근거 없어 발명 안 한 것 (No-Fabrication 우선)
+각 산출의 open_questions는 무시·생략 없이 기록된다. frontend/mobile은 상위 전파분과 explicit_not_implemented까지 포함한다.
+
+### 5.1 입력 부족으로 못 정한 것
+
+1. design_system: 브랜드 reference 미제공 시 baseline 세트(Material seed + Pretendard + Tabler) 사용 중 기록. token 제공 색이 WCAG AA 미달이면 적용하되 경고.
+2. backend: POST 요청 본문 필드 미정(도메인 입력 필요).
+3. mobile: safe-area 근거가 design_system/wireframe에 없으면 미적용.
+
+### 5.2 근거 없어 발명 안 한 것 (No-Fabrication 우선)
 
 1. backend: 409 중복 등 도메인 특수 case 근거 없음. 표준 case만 생성.
-2. frontend/mobile: loading/empty 상태 근거가 wireframe/backend에 없음. 미구현(success/error는 outcome_mapping으로 처리).
+2. frontend/mobile: loading/empty 상태 근거가 wireframe/backend에 없음. 미구현(success/error는 outcome_mapping).
+3. design_system: image/url reference는 offline 분석 불가. real 모드 필요.
 
-### 4.3 현재 구조 한계로 보류한 것
+### 5.3 현재 구조 한계로 보류한 것
 
-1. wireframe: 보완 기능(strategy 와우포인트, origin=inference)은 단일 화면 IA에 배치 대상 아님.
-2. frontend/mobile: 위 미배치 보완 기능은 explicit_not_implemented로 명시(wireframe 미배치로 화면 구현 불가).
-3. 단일 화면 구조라 navigation(데스크톱 사이드바 / 모바일 bottom nav)은 미적용. 다중 화면 전환 시 적용.
+1. wireframe: 보완 기능(와우포인트, origin=inference)은 단일 화면 IA에 배치 대상 아님.
+2. frontend/mobile: 위 미배치 보완 기능은 explicit_not_implemented로 명시.
+3. 단일 화면 구조라 navigation(데스크톱 사이드바 / 모바일 bottom nav) 미적용. 다중 화면 전환 시 적용.
+4. design_system: pattern·motion 레이어는 근거 없음으로 보류(자리만).
 
-### 4.4 전파(교차) 관찰
+## 6. 알려진 배포 한계
 
-1. backend의 POST 요청 필드·특수 case 미정은 frontend/mobile open_questions로 표면화된다(영향 있는 항목만, 입력 사실 기반).
-2. 전파의 게이트 차원 교차 검사는 아직 없다(B5).
+1. 하네스 전체 파이프라인(정의 6 + 구축 3 + 게이트)을 한 요청에서 동기 실행하면 Vercel 함수 시간제한을 초과할 위험이 있다. Pro 최대 5분, Fluid compute 최대 14분 수준이다.
+2. 긴 실행(전체 파이프라인, real 모드 web_search 다수)은 별도 서버 또는 잡러너 + 비동기(큐·폴링·웹훅) 구조가 필요하다.
+3. Vercel에는 UI와 짧은 API(단일 노드 트리거, 상태 조회 등)만 적합하다. 오케스트레이션 본체는 서버리스 함수 밖에서 돌려야 한다.
+
+## 7. 다음 후보 단계
+
+1. 로컬 real LLM 전환: make_producer(llm=real_llm)로 strategy 경쟁사 리서치·design_system 도메인 시드부터 채움(BACKLOG B1 실행 메타 경로도 함께 검토).
+2. B 트랙(셀프서비스 제품): API + 서버(잡러너) + UI. 6절 배포 한계를 반영해 오케스트레이션을 비동기 서버에 둔다.
+3. frontend·mobile stale 해소: 새 design_system 구조(tokens/foundation)를 읽도록 frontend·mobile을 갱신·재실행. 이후 게이트 B5(전파 교차검사)로 토큰 단위 역추적 보존을 확인.
