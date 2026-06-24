@@ -10,8 +10,14 @@ BASE = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(BASE))
 sys.path.insert(0, str(BASE / "agents"))
 
+import os
 from orchestrator import Store, Orchestrator, canonical_hash
 import strategy as strategy_agent
+
+# 모드 스위치: STRATEGY_MODE=real 이면 Anthropic API 호출, 기본은 결정적 mock.
+MODE = os.environ.get("STRATEGY_MODE", "mock")
+STRATEGY_LLM = strategy_agent.real_llm if MODE == "real" else strategy_agent.offline_llm
+print(f"[demo_strategy] MODE={MODE}")
 
 ROOT = str(BASE / "_run_strategy")
 PROJECT = 31
@@ -22,7 +28,7 @@ WF = json.loads((BASE / "workflow" / "site-build.v1.json").read_text())
 
 # 실제 Strategy Agent를 producer로 등록. policy는 아직 mock.
 PRODUCERS = {
-    "strategy": strategy_agent.make_producer(),       # 실제 에이전트(offline llm)
+    "strategy": strategy_agent.make_producer(STRATEGY_LLM),   # mock 또는 real (STRATEGY_MODE)
     "policy": lambda inputs: {"service_rules": ["placeholder"]},  # 다음 우선순위
 }
 

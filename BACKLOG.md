@@ -31,6 +31,13 @@
 3. 필요한 변경: 게이트 결과를 orchestrator 훅으로 자동 연결하고, FAIL 시 해당 노드를 되돌리거나(rollback) 재실행 정책에 태우는 Performance Outcomes 흐름. on_upstream_change/gate와 별개 축인지 결정 필요.
 4. 영향: orchestrator.py(결정 루프·상태 전이), workflow 노드 정의. 구조·정책 변경이라 backlog. 지금은 건드리지 않는다.
 
+## B6. Strategy real 모드에 web_search 도구 연결
+
+1. 현상: Strategy real 모드(make_real_llm)는 현재 web_search 없이 Claude 지식만으로 산출한다. 그래서 competitors는 모델이 확실히 아는 서비스로 제한되고, 불확실하면 빈 배열 + market_gaps "데이터 없음"으로 정직 표기된다.
+2. 현재 회피: real 모드 지시에 No-Fabrication을 명시(근거 없는 경쟁사·수치 발명 금지).
+3. 필요한 변경: web_search(또는 Claude 서브에이전트 도구 사용)를 real_llm에 연결해 competitors.axes·market_gaps를 실데이터+출처로 채운다. source_url을 검색 결과로 검증.
+4. 영향: strategy.py real_llm(도구 루프), agent_strategy.md 절차. 다른 에이전트(ux/security/...) real 전환도 같은 패턴으로 이어짐.
+
 ## B5. Review Gate의 파이프라인 교차(전파) 검사
 
 1. 현상: frontend는 상위(wireframe/design_system/backend)의 open_questions가 자기 산출에 영향을 줄 때 open_questions로 전파하고, 입력 부족 미구현은 explicit_not_implemented로 기록한다. 그러나 게이트(gate_review)는 단일 산출물의 자기 계약만 검사하고, 전파가 제대로 됐는지(상위 open_question이 하위로 이어졌는지)는 검사하지 않는다.

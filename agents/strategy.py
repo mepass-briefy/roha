@@ -3,19 +3,36 @@ Strategy Agent producer.
 
 orchestrator 계약: producer(inputs: dict) -> body: dict
 모델 호출은 llm(system, user) -> str 인터페이스로 분리한다.
-  - real: web_search 가능한 Claude 서브에이전트로 교체되는 자리
+  - real: Anthropic messages API로 Claude 호출(이번 단계는 web_search 없이 모델 지식만).
   - offline: 결정적. intake가 제공한 seed_competitors만 사용. 발명 금지.
 
+mock/real 선택은 make_producer(llm=...)로 한다. real 실패(키 없음/네트워크/API 에러)는
+mock으로 조용히 폴백하지 않고 명확히 raise한다(어느 모드인지 혼동 방지).
 본 에이전트는 body만 반환한다. 버전/derived_from/status는 orchestrator 책임.
 """
 
 import json
+import os
 from pathlib import Path
 
 AGENT_NAME = "agent.strategy"
 SYSTEM_PROMPT = Path(__file__).with_name("agent_strategy.md").read_text(encoding="utf-8")
 
 FIXED_AXES = ["기능", "수익모델", "온보딩", "불편지점"]
+
+# real 모드 기본 모델. 필요 시 make_real_llm(model=...)로 교체.
+REAL_MODEL_DEFAULT = "claude-sonnet-4-6"
+
+# real 모드 추가 지시(이번 단계: web_search 없이 모델 지식만, No-Fabrication 강조).
+REAL_MODE_INSTRUCTION = (
+    "\n\n## real 모드 지시\n"
+    "1. web_search 없이 너의 지식만 사용한다(검색 도구 미연결).\n"
+    "2. No-Fabrication: 근거가 불확실한 경쟁사·수치를 지어내지 않는다. "
+    "실제로 존재한다고 아는 서비스만 competitors에 넣고 source_url(공식 도메인)을 단다. "
+    "불확실하면 competitors를 빈 배열로 두고 market_gaps에 '데이터 없음'을 표기한다.\n"
+    "3. 위 출력 스키마의 JSON만 출력한다. 코드펜스나 설명 텍스트를 넣지 않는다.\n"
+    "4. chosen은 항상 null. unique_angles는 intake가 준 것만 사용한다."
+)
 
 
 def build_user_prompt(intake: dict) -> str:
@@ -97,6 +114,38 @@ def offline_llm(system: str, user: str) -> str:
     return json.dumps(body, ensure_ascii=False)
 
 
+def make_real_llm(model=REAL_MODEL_DEFAULT, max_tokens=4096):
+    """real llm(system, user) -> str. Anthropic messages API로 Claude 호출.
+    실패(SDK 미설치/키 없음/네트워크/API 에러)는 mock 폴백 없이 RuntimeError로 드러낸다."""
+    def real_llm(system: str, user: str) -> str:
+        try:
+            import anthropic
+        except ImportError as e:
+            raise RuntimeError("real 모드 불가: anthropic SDK 미설치 (pip install anthropic)") from e
+        api_key = os.environ.get("ANTHROPIC_API_KEY")
+        if not api_key:
+            raise RuntimeError("real 모드 불가: ANTHROPIC_API_KEY 환경변수 없음 (mock으로 폴백하지 않음)")
+        client = anthropic.Anthropic(api_key=api_key)
+        try:
+            resp = client.messages.create(
+                model=model,
+                max_tokens=max_tokens,
+                system=system + REAL_MODE_INSTRUCTION,
+                messages=[{"role": "user", "content": user}],
+            )
+        except Exception as e:
+            raise RuntimeError(f"real 모드 Anthropic API 호출 실패: {type(e).__name__}: {e}") from e
+        text = "".join(b.text for b in resp.content if getattr(b, "type", None) == "text").strip()
+        if not text:
+            raise RuntimeError("real 모드: Anthropic 응답에 텍스트 없음")
+        return text
+    return real_llm
+
+
+# 편의 인스턴스(기본 모델). 키/네트워크는 호출 시점에 검사된다.
+real_llm = make_real_llm()
+
+
 def produce(inputs: dict, llm=offline_llm) -> dict:
     intake = inputs["intake"]
     raw = llm(SYSTEM_PROMPT, build_user_prompt(intake))
@@ -106,7 +155,8 @@ def produce(inputs: dict, llm=offline_llm) -> dict:
 
 
 def make_producer(llm=offline_llm):
-    """orchestrator에 등록할 producer(inputs)->body 클로저. llm 주입은 클로저로 처리(구조 변경 없음)."""
+    """orchestrator에 등록할 producer(inputs)->body 클로저. llm 주입은 클로저로 처리(구조 변경 없음).
+    mock: make_producer() 또는 make_producer(offline_llm). real: make_producer(real_llm) 또는 make_producer(make_real_llm(model=...))."""
     def producer(inputs):
         return produce(inputs, llm=llm)
     return producer

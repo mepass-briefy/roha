@@ -1,6 +1,7 @@
 __pycache__/
 *.pyc
 .claude/settings.local.json
+.env
 _run/
 _run_strategy/
 _run_ux/

@@ -1,2 +1,4 @@
 # Backend(API) Agent가 응답 검증에 사용. 설치 검증 버전 2.13.4, 하한만 고정.
 pydantic>=2.0
+# Strategy Agent real 모드(Anthropic messages API). 설치 검증 버전 0.111.0, 하한만 고정.
+anthropic>=0.40
