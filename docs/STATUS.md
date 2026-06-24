@@ -200,6 +200,14 @@ goal_analysis -> discovery 확장·개명 완료(855124c, a030ecf). 역할 = 고
 2. Working Layer 설계 미정: 원본 AI 산출 불변 + 사람 편집을 분리한다. 새 테이블 vs 새 버전(origin=human) 중 택1은 기능 정렬 화면 구현 시 결정.
 3. 기술 명세 층(미구현): features -> 데이터모델·API·화면 상세. 구축 에이전트의 입력 정밀도를 높이는 명세.
 
+## 4h. 발견된 핵심 문제 (내일 작업)
+
+실사용에서 드러난 문제다. 순서: Goal Confirmed 연결 -> features에 Goal-driven 제안 추가 -> UI 사람가독 렌더.
+
+1. features가 입력한 요구만 그대로 통과시키고, 목표 대비 빠진 기능을 제안하지 않는다. No-Fabrication(발명 금지)은 구현됐으나 Goal-driven 제안(목표 달성에 필요한데 요구에서 빠진 것을 제안 — 자동 채택이 아니라 제안, 목표 근거라 발명 아님)이 미구현. 입력이 짧으면 목표 누락분을 agent가 짚어줘야 하는데 하지 않는다.
+2. 선행 조건: features(및 ux 등)가 Goal Confirmed를 입력으로 받아야 "목표 대비 누락"을 판단할 수 있다. 지금은 Goal 미수신 상태다. strategy/features의 Goal Confirmed 연결이 이 기능의 전제다(4d.1 보류 항목과 직결).
+3. UI가 records의 JSON 원본을 그대로 노출한다(전략·UX·와이어프레임이 raw JSON). 사람이 읽을 형태로 렌더가 필요하다. (참고: ee526e7에서 StructuredView로 일부 구조화했으나 가독성 보강 여지가 남음.)
+
 ## 5. open_questions 현황 (성격별 분류)
 
 각 산출의 open_questions는 무시·생략 없이 기록된다. frontend/mobile은 상위 전파분과 explicit_not_implemented까지 포함한다.
