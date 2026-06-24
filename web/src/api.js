@@ -11,6 +11,7 @@ async function j(method, url, body) {
 }
 
 export const api = {
+  listProjects: () => j("GET", "/projects"),
   createProject: (payload) => j("POST", "/projects", payload),
   run: (pk) => j("POST", `/projects/${encodeURIComponent(pk)}/run`),
   status: (pk) => j("GET", `/projects/${encodeURIComponent(pk)}/status`),

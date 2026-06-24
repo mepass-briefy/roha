@@ -87,6 +87,27 @@ class CreateReq(BaseModel):
 
 
 # ---- 엔드포인트 ----
+@app.get("/projects")
+def list_projects():
+    # 프로젝트 목록(중단 재개·완료 조회용). 외부 식별자 public_key만 노출(내부 PK 비노출).
+    with _conn() as c, c.cursor() as cur:
+        cur.execute(
+            "SELECT p.public_key, p.created_at, rv.body "
+            "FROM projects p "
+            "LEFT JOIN records r ON r.project_pk = p.pk AND r.type = 'intake' "
+            "LEFT JOIN record_versions rv ON rv.pk = r.current_version_pk "
+            "ORDER BY p.created_at DESC LIMIT 100"
+        )
+        rows = cur.fetchall()
+    out = []
+    for public_key, created_at, body in rows:
+        title = None
+        if isinstance(body, dict):
+            title = body.get("site_character") or (body.get("goal") or {}).get("statement")
+        out.append({"public_key": public_key, "created_at": str(created_at), "title": title or "(제목 없음)"})
+    return {"projects": out}
+
+
 @app.post("/projects")
 def create_project(req: CreateReq):
     with _conn() as c, c.cursor() as cur:
