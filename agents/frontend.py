@@ -11,6 +11,7 @@ orchestrator 계약: producer(inputs: dict) -> body: dict
 """
 
 import json
+import re
 import hashlib
 from pathlib import Path
 from typing import List, Optional
@@ -43,6 +44,61 @@ CONTRACT_RULES = """## 계약 규칙(주입)
 
 PK_SUFFIXES = ("_id", "_pk")
 PK_NAMES = ("id", "pk")
+
+# Open Question 전파용 패턴(상위 산출물 open_questions 파싱). 입력 사실 기반, 발명 없음.
+_PATH_RE = re.compile(r"(POST|GET|PUT|PATCH|DELETE)\s+(/api/v1/[\w/{}-]+)")
+_FEAT_RE = re.compile(r"기능 '([^']+)'")
+_SEM_RE = re.compile(r"의미색 '([^']+)'")
+
+
+def _propagate_open_questions(wireframe, design_system, backend, screens):
+    """상위 입력의 open_questions가 frontend 산출에 영향을 줄 때만 전파 기록(단순 복사 금지).
+    입력 사실 기반: 상위 open_question이 실제 있고 frontend가 그 대상을 쓸 때만 기록(No-Fabrication 유지).
+    반환: (propagated_open_questions[list], explicit_not_implemented[list of dict])."""
+    propagated = []
+    explicit_ni = []
+    used_eps = {dc["endpoint_ref"] for s in screens for dc in s["data_calls"]}
+    used_tokens = {t for s in screens for t in s["uses_tokens"]}
+    bk_endpoints = backend.get("api_spec", {}).get("endpoints", [])
+    ep_by_pm = {(e["path"], e["method"]): e["endpoint_id"] for e in bk_endpoints}
+
+    # backend open_questions -> frontend가 그 endpoint를 호출할 때만 영향
+    for oq in backend.get("open_questions", []):
+        m = _PATH_RE.search(oq)
+        if not m:
+            continue
+        method, path = m.group(1), m.group(2)
+        eid = ep_by_pm.get((path, method))
+        if not eid or eid not in used_eps:
+            continue
+        if "요청 본문 필드" in oq or "request" in oq.lower():
+            propagated.append(f"[전파:backend] endpoint_ref={eid}({method} {path})의 request schema 미정 -> 입력 폼 정의 불가 (상위: {oq})")
+        elif "409" in oq or "특수 case" in oq:
+            propagated.append(f"[전파:backend] endpoint_ref={eid}({method} {path})의 도메인 특수 case 미정 -> 해당 실패 UI 정의 불가 (상위: {oq})")
+        else:
+            propagated.append(f"[전파:backend] endpoint_ref={eid} 관련 상위 미정 영향 (상위: {oq})")
+
+    # wireframe open_questions -> 미배치 기능은 화면 구현 불가(Silent Omission 방지)
+    for oq in wireframe.get("open_questions", []):
+        if "화면 배치 미정" in oq or "미생성" in oq:
+            fm = _FEAT_RE.search(oq)
+            feat = fm.group(1) if fm else oq
+            explicit_ni.append({
+                "item": f"기능 '{feat}' 화면",
+                "reason": "wireframe 미배치로 frontend 화면 구현 불가",
+                "source_open_question": oq,
+            })
+
+    # design_system open_questions -> 해당 토큰을 frontend가 실제 사용할 때만 전파
+    for oq in design_system.get("open_questions", []):
+        sm = _SEM_RE.search(oq)
+        if not sm:
+            continue
+        tok = f"color-{sm.group(1)}"
+        if tok in used_tokens:
+            propagated.append(f"[전파:design_system] 토큰 {tok} 미확정 -> 해당 스타일 확정 불가 (상위: {oq})")
+
+    return propagated, explicit_ni
 
 
 # ---------------- Pydantic 모델 ----------------
@@ -112,6 +168,7 @@ class FrontendBody(BaseModel):
     screens: List[Screen]
     artifact_refs: List[ArtifactRef] = []
     open_questions: List[str] = []
+    explicit_not_implemented: List[dict] = []
     provenance: dict
 
     @model_validator(mode="after")
@@ -264,6 +321,10 @@ def offline_llm(prompt) -> str:
             "states": None, "uses_tokens": uses_tokens, "navigation": navigation,
         })
 
+    # Open Question Propagation + Dependency Gap + Silent Omission(입력 사실 기반)
+    propagated, explicit_ni = _propagate_open_questions(wf, ds, bk, screens)
+    open_questions.extend(propagated)
+
     result = {
         "screen_index": screen_names,
         "endpoint_index": endpoint_index,
@@ -272,10 +333,12 @@ def offline_llm(prompt) -> str:
         "token_index": sorted(token_set),
         "screens": screens,
         "open_questions": open_questions,
+        "explicit_not_implemented": explicit_ni,
         "provenance": {
             "screens": "per_item", "components": "fact", "data_calls": "fact",
             "outcome_mapping": "fact", "uses_tokens": "fact", "ui_hint": "inference",
             "states": "open", "navigation": "inference",
+            "propagated_open_questions": "fact", "explicit_not_implemented": "fact",
         },
     }
     return json.dumps(result, ensure_ascii=False)

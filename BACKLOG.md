@@ -30,3 +30,10 @@
 2. 현재 회피: 게이트는 검사만 한다. FAIL이어도 재생성 루프·agent 재실행·workflow 재시도를 하지 않고 사유만 보고한다(설계 동결 준수).
 3. 필요한 변경: 게이트 결과를 orchestrator 훅으로 자동 연결하고, FAIL 시 해당 노드를 되돌리거나(rollback) 재실행 정책에 태우는 Performance Outcomes 흐름. on_upstream_change/gate와 별개 축인지 결정 필요.
 4. 영향: orchestrator.py(결정 루프·상태 전이), workflow 노드 정의. 구조·정책 변경이라 backlog. 지금은 건드리지 않는다.
+
+## B5. Review Gate의 파이프라인 교차(전파) 검사
+
+1. 현상: frontend는 상위(wireframe/design_system/backend)의 open_questions가 자기 산출에 영향을 줄 때 open_questions로 전파하고, 입력 부족 미구현은 explicit_not_implemented로 기록한다. 그러나 게이트(gate_review)는 단일 산출물의 자기 계약만 검사하고, 전파가 제대로 됐는지(상위 open_question이 하위로 이어졌는지)는 검사하지 않는다.
+2. 현재 회피: 전파는 각 에이전트(현재 frontend)가 자체적으로 기록. 게이트는 교차 검사를 하지 않는다.
+3. 필요한 변경: Review Gate가 파이프라인 교차 검사를 하도록 확장. 상위 open_question의 하위 전파 여부 점검, Silent Omission 탐지(입력 부족 항목이 open_questions/explicit_not_implemented 어디에도 없으면 누락), Open Question 전파 누락 시 FAIL. 게이트가 단일 record가 아니라 상·하위 record를 함께 받는 구조 확장 필요.
+4. 영향: gate_review.py 시그니처(다중 record 입력), 게이트 호출부. 구조 확장이라 backlog. 지금은 건드리지 않는다.

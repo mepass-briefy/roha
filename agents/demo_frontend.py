@@ -112,6 +112,19 @@ for q in b["open_questions"]:
     print("  -", q)
 print("derived_from(불변, wireframe/design_system/backend 핀):", fv["derived_from"])
 
+print("\n=== Open Question 전파 실측 ===")
+prop = [q for q in b["open_questions"] if q.startswith("[전파:")]
+print("전파된 open_questions 수:", len(prop))
+for q in prop:
+    print("  -", q)
+bk_req = [q for q in prop if "request schema 미정" in q]
+print("backend POST 요청 필드 미정 -> frontend 표면화:", len(bk_req) > 0, f"({len(bk_req)}건)")
+print("\nexplicit_not_implemented(알지만 입력 부족으로 미구현):")
+for e in b["explicit_not_implemented"]:
+    print(f"  - item={e['item']} | reason={e['reason']}")
+wf_ni = [e for e in b["explicit_not_implemented"] if "wireframe 미배치" in e["reason"]]
+print("wireframe 미배치 보완 기능 기록 수:", len(wf_ni), "(기대 2)")
+
 # ===== Blocking Rule 실측: design token 누락 시 화면 미생성 + open_questions =====
 print("\n=== Blocking Rule 실측: design token 결손 -> 화면 차단 ===")
 wf_body = store.version("wireframe", store.head("wireframe")["current_version"])["body"]
