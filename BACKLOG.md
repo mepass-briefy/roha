@@ -44,3 +44,18 @@
 2. 현재 회피: 전파는 각 에이전트(현재 frontend)가 자체적으로 기록. 게이트는 교차 검사를 하지 않는다.
 3. 필요한 변경: Review Gate가 파이프라인 교차 검사를 하도록 확장. 상위 open_question의 하위 전파 여부 점검, Silent Omission 탐지(입력 부족 항목이 open_questions/explicit_not_implemented 어디에도 없으면 누락), Open Question 전파 누락 시 FAIL. 게이트가 단일 record가 아니라 상·하위 record를 함께 받는 구조 확장 필요.
 4. 영향: gate_review.py 시그니처(다중 record 입력), 게이트 호출부. 구조 확장이라 backlog. 지금은 건드리지 않는다.
+
+## B7. strategy real 모드의 입력 도메인 고정 불안정
+
+1. 현상: strategy real(web_search)이 입력 도메인을 검색에 안정적으로 고정하지 못한다. 풋살 입력을 코딩 교육 플랫폼으로 오인하는 비결정성을 관찰했다(직접 검증에선 정확, API 경로 일부 실행에선 오인).
+2. 현재 회피: 없음. real LLM 비결정성으로 관찰만.
+3. 필요한 변경: 시스템 프롬프트에 입력 도메인(site_character/Goal) 고정 강화. Discovery(goal_interpretation·requirement_normalization) 연결로 도메인 신호가 강해지면 완화되는지 먼저 관찰 후 대응.
+4. 영향: strategy.py real 지시. real 품질 이슈라 backlog.
+
+## B8. 에이전트별 모델 라우팅 + 비용 최적화
+
+1. 현상: 현재 real 에이전트는 단일 모델(claude-sonnet-4-6) 고정이며, 프롬프트 캐싱·max_tokens 튜닝·배치 미적용.
+2. 방침: Sonnet 기본 / Opus 선택(2단계, Haiku 미사용 — 단계마다 판단·정확도가 중요해 단순 모델은 품질 위험·재작업이 더 비쌈). 모델 선택 기준은 고객 서비스 규모가 아니라 코드 생성의 추론 난이도. Discovery·요구 정리·features 등 해석=Sonnet, 복잡한 설계·코드 생성=Opus.
+3. 필요한 변경: make_producer(llm=)로 에이전트별 모델 주입(라우팅). 더 큰 레버는 프롬프트 캐싱(시스템 프롬프트 반복분 최대 90% 절감)·배치·max_tokens(출력이 에이전틱 비용의 70~80%). 실측으로 에이전트마다 결정(같은 입력으로 품질·토큰 비교).
+4. 착수 시점: 기능 완성 후. 구조가 바뀌면 비용 최적화가 헛수고이므로 기능 먼저. (현재 가격 2026-06: Opus $5/$25, Sonnet $3/$15 per 1M in/out, 격차 1.67배)
+5. 영향: 각 에이전트 make_real_llm/호출부, 비용. real 품질·비용 이슈라 backlog.
