@@ -70,18 +70,33 @@ def run_review_gate(record_type, body):
         reasons.append(f"계약 위반: {e}")
 
     # design_system 토큰 단위 traceability 검사(단일 산출물 범위).
-    # frontend·mobile 교차 전파 검사는 B5(BACKLOG) 유지.
+    # frontend·mobile 으로의 전파 보존 교차검사는 하지 않는다(B5 BACKLOG 유지).
     if record_type == "design_system":
+        REF_ORIGINS = ("reference-token", "reference-image", "reference-url")
         toks = body.get("tokens")
         if not toks:
             reasons.append("traceability 위반: tokens 없음")
         else:
-            for t in toks:
+            for i, t in enumerate(toks):
+                key = t.get("token_key")
+                ident = key if key else f"index {i}"
+                # 1. token_key / value / origin 존재
+                if not key:
+                    reasons.append(f"traceability 위반: token_key 없는 토큰(index {i})")
+                if "value" not in t:
+                    reasons.append(f"traceability 위반: value 없는 토큰 '{ident}'")
                 o = t.get("origin")
                 if not o:
-                    reasons.append(f"traceability 위반: origin 없는 토큰 '{t.get('token_key')}'")
-                elif o.startswith("reference-") and not t.get("source_reference_id"):
-                    reasons.append(f"traceability 위반: {o} 인데 source_reference_id 없음 '{t.get('token_key')}'")
+                    reasons.append(f"traceability 위반: origin 없는 토큰 '{ident}'")
+                    continue
+                # 2. reference-* origin 이면 source_reference_id 존재
+                if o in REF_ORIGINS:
+                    if not t.get("source_reference_id"):
+                        reasons.append(f"traceability 위반: {o} 인데 source_reference_id 없음 '{ident}'")
+                # 3. baseline origin 이면 source_reference_id 없어야 정상
+                elif o == "baseline":
+                    if t.get("source_reference_id"):
+                        reasons.append(f"traceability 위반: baseline 인데 source_reference_id 존재 '{ident}'")
 
     # Provenance: 항목별 표기 존재(각 에이전트 계약 공통)
     if not body.get("provenance"):
