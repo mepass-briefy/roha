@@ -23,3 +23,10 @@
 2. 현재 회피: 모든 endpoint exposure=internal. 외부 공개 정책 미정의.
 3. 필요한 변경: exposure=public endpoint 도입 시 외부 인증(API key/OAuth 등)과 rate limit 정책을 엔드포인트 계약에 추가해야 한다. 어떤 endpoint를 public으로 노출할지 판단과 정책 모델링이 선행.
 4. 영향: backend.py 계약(엔드포인트 계약에 인증/rate limit 필드), 보안 통제 매핑. 정책·구조 변경이라 backlog. 지금은 건드리지 않는다.
+
+## B4. 게이트 결과의 orchestrator 훅 연결 + FAIL 시 되돌림(Performance Outcomes)
+
+1. 현상: Test/Review 게이트(agents/gate_test.py, gate_review.py)는 producer 완료 후 명시적으로 호출하는 독립 검사기다. PASS/WARN/FAIL과 사유만 반환하고, orchestrator와 자동 연결되지 않는다.
+2. 현재 회피: 게이트는 검사만 한다. FAIL이어도 재생성 루프·agent 재실행·workflow 재시도를 하지 않고 사유만 보고한다(설계 동결 준수).
+3. 필요한 변경: 게이트 결과를 orchestrator 훅으로 자동 연결하고, FAIL 시 해당 노드를 되돌리거나(rollback) 재실행 정책에 태우는 Performance Outcomes 흐름. on_upstream_change/gate와 별개 축인지 결정 필요.
+4. 영향: orchestrator.py(결정 루프·상태 전이), workflow 노드 정의. 구조·정책 변경이라 backlog. 지금은 건드리지 않는다.
