@@ -69,6 +69,20 @@ def run_review_gate(record_type, body):
     except Exception as e:
         reasons.append(f"계약 위반: {e}")
 
+    # design_system 토큰 단위 traceability 검사(단일 산출물 범위).
+    # frontend·mobile 교차 전파 검사는 B5(BACKLOG) 유지.
+    if record_type == "design_system":
+        toks = body.get("tokens")
+        if not toks:
+            reasons.append("traceability 위반: tokens 없음")
+        else:
+            for t in toks:
+                o = t.get("origin")
+                if not o:
+                    reasons.append(f"traceability 위반: origin 없는 토큰 '{t.get('token_key')}'")
+                elif o.startswith("reference-") and not t.get("source_reference_id"):
+                    reasons.append(f"traceability 위반: {o} 인데 source_reference_id 없음 '{t.get('token_key')}'")
+
     # Provenance: 항목별 표기 존재(각 에이전트 계약 공통)
     if not body.get("provenance"):
         reasons.append("Provenance 표기 없음(계약)")

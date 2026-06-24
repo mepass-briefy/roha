@@ -72,17 +72,45 @@ for reason in r_bad["reasons"]:
 assert r_bad["status"] == "FAIL"
 
 # frontend endpoint_ref 발명(backend에 없는 호출) -> Review FAIL
-fe_bad = copy.deepcopy(fe)
-fe_bad["screens"][0]["data_calls"][0]["endpoint_ref"] = "ep-없는-호출"
-r_fe_bad = gate_review.run_review_gate("frontend", fe_bad)
-print("frontend(발명 endpoint_ref) REVIEW:", r_fe_bad["status"])
-for reason in r_fe_bad["reasons"]:
-    print("  reason:", reason)
-assert r_fe_bad["status"] == "FAIL"
+# 주의: design_system 재정의 전파로 frontend가 stale(빈 산출)이면 위반 주입 대상이 없으므로 스킵.
+if fe.get("screens"):
+    fe_bad = copy.deepcopy(fe)
+    fe_bad["screens"][0]["data_calls"][0]["endpoint_ref"] = "ep-없는-호출"
+    r_fe_bad = gate_review.run_review_gate("frontend", fe_bad)
+    print("frontend(발명 endpoint_ref) REVIEW:", r_fe_bad["status"])
+    assert r_fe_bad["status"] == "FAIL"
+else:
+    print("frontend stale(빈 산출, design_system 재정의 전파) -> frontend 위반 주입 스킵")
+
+print("\n=== design_system traceability 위반 -> Review FAIL (신규 검사) ===")
+# (a) origin 누락
+ds_no_origin = copy.deepcopy(ds)
+ds_no_origin["tokens"][0]["origin"] = ""
+r1 = gate_review.run_review_gate("design_system", ds_no_origin)
+print("design_system(origin 누락) REVIEW:", r1["status"])
+print("  reason:", next((x for x in r1["reasons"] if "traceability" in x), None))
+assert r1["status"] == "FAIL"
+
+# (b) reference-* origin인데 source_reference_id 누락
+ds_ref = ds_agent.produce({"intake": {"site_character": "x", "requirements": ["개인 신청"],
+                                       "references": [{"reference_id": "REF-001", "type": "token",
+                                                       "value": {"color.primary": "#1E88E5"}, "source": "kit"}]},
+                           "strategy": {}, "ux": {}})
+ds_ref_bad = copy.deepcopy(ds_ref)
+rt = next(t for t in ds_ref_bad["tokens"] if t["origin"].startswith("reference-"))
+rt["source_reference_id"] = None
+r2 = gate_review.run_review_gate("design_system", ds_ref_bad)
+print("design_system(reference-* source 누락) REVIEW:", r2["status"])
+print("  reason:", next((x for x in r2["reasons"] if "source_reference_id" in x), None))
+assert r2["status"] == "FAIL"
+# 정상 design_system은 traceability 통과(WARN, open_questions 때문)
+r_ok = gate_review.run_review_gate("design_system", ds_ref)
+print("design_system(정상) REVIEW:", r_ok["status"], "(traceability 통과, open_questions로 WARN)")
+assert r_ok["status"] in ("PASS", "WARN")
 
 print("\n=== artifact 파일 누락 -> Test FAIL ===")
-t_missing = gate_test.run_test_gate("frontend", fe, artifact_base=ROOT / "_does_not_exist")
-print("frontend(artifact base 결손) TEST:", t_missing["status"])
+t_missing = gate_test.run_test_gate("backend", bk, artifact_base=ROOT / "_does_not_exist")
+print("backend(artifact base 결손) TEST:", t_missing["status"])
 for reason in t_missing["reasons"]:
     print("  reason:", reason)
 assert t_missing["status"] == "FAIL"
