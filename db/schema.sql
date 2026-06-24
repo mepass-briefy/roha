@@ -174,6 +174,14 @@ ALTER TABLE runs                ENABLE ROW LEVEL SECURITY;
 ALTER TABLE events              ENABLE ROW LEVEL SECURITY;
 ALTER TABLE artifacts           ENABLE ROW LEVEL SECURITY;
 
+-- FORCE: 테이블 owner 연결에도 RLS 적용(Neon 기본 role이 owner이므로 격리 강제에 필요).
+ALTER TABLE records             FORCE ROW LEVEL SECURITY;
+ALTER TABLE record_versions     FORCE ROW LEVEL SECURITY;
+ALTER TABLE record_validations  FORCE ROW LEVEL SECURITY;
+ALTER TABLE runs                FORCE ROW LEVEL SECURITY;
+ALTER TABLE events              FORCE ROW LEVEL SECURITY;
+ALTER TABLE artifacts           FORCE ROW LEVEL SECURITY;
+
 DROP POLICY IF EXISTS tenant_isolation_records           ON records;
 DROP POLICY IF EXISTS tenant_isolation_record_versions   ON record_versions;
 DROP POLICY IF EXISTS tenant_isolation_record_validations ON record_validations;
