@@ -1,9 +1,10 @@
 """
-Features Agent E2E 검증.
-intake -> strategy -> ux -> security -> features 까지 돌려 계약 준수, 제약 강제, orchestrator 결합을 확인한다.
-오프라인 모드(결정적). site-build.v5 워크플로(features 노드)를 사용한다. 기존 데모/워크플로는 그대로 둔다.
+Features Agent 검증. intake -> strategy -> ux -> security -> features.
+mock / real(FEATURES_MODE=real) / real+search(FEATURES_SEARCH=on) 스위치.
+strategy/ux/security는 mock(입력 제공), features만 모드 전환. 기존 워크플로/데모는 그대로 둔다.
 """
-import sys, shutil, json
+import os, sys, shutil, json
+from collections import Counter
 from pathlib import Path
 
 BASE = Path(__file__).resolve().parent.parent
@@ -16,6 +17,14 @@ import ux as ux_agent
 import security as security_agent
 import features as features_agent
 
+FMODE = os.environ.get("FEATURES_MODE", "mock")
+FSEARCH = os.environ.get("FEATURES_SEARCH", "off")
+print(f"[demo_features] FEATURES_MODE={FMODE} FEATURES_SEARCH={FSEARCH}")
+if FMODE == "real":
+    F_LLM = features_agent.make_real_llm(use_search=(FSEARCH == "on"))
+else:
+    F_LLM = features_agent.offline_llm
+
 ROOT = str(BASE / "_run_features")
 PROJECT = 71
 if Path(ROOT).exists():
@@ -27,7 +36,7 @@ PRODUCERS = {
     "strategy": strategy_agent.make_producer(),
     "ux": ux_agent.make_producer(),
     "security": security_agent.make_producer(),
-    "features": features_agent.make_producer(),
+    "features": features_agent.make_producer(F_LLM),
 }
 
 store = Store(ROOT, PROJECT)
@@ -47,10 +56,8 @@ store.append_version({"pk": ver_pk, "type": "intake", "record_pk": head["pk"], "
                       "derived_from": [], "produced_by_run": None})
 store.save_head(head)
 
-# 정의 단계: strategy -> ux -> security -> features (각 사람 게이트 승인)
 for node in ("strategy", "ux", "security"):
     picked = orc.tick()
-    print(f"=== tick: {picked} ===")
     orc.human_confirm(picked)
 print("=== tick: features ===", orc.tick())
 
@@ -58,53 +65,38 @@ fh = store.head("features")
 fv = store.version("features", fh["current_version"])
 b = fv["body"]
 
-print("\n=== 산출된 features body ===")
-print(json.dumps(b, ensure_ascii=False, indent=2))
-
-print("\n=== 검증 ===")
-core = [f for f in b["features"] if f["origin"] == "fact"]
-enh = [f for f in b["features"] if f["origin"] == "inference"]
-print("핵심 기능(fact, ux 태스크 기반):", [f["feature"] for f in core])
-print("  모두 source가 ux:/requirement:", all(f["source"].startswith(("ux:", "requirement:")) for f in core))
-print("보완 기능(inference, derived):", [f["feature"] for f in enh])
-print("  모두 source가 derived:", all(f["source"].startswith("derived:") for f in enh))
-print("기능별 security_controls 매핑:")
-for f in core:
-    print(f"  - {f['feature']}: {f['security_controls']}")
-print("모든 feature source 보유:", all(f.get("source") for f in b["features"]))
-print("priority 분포:", {f["feature"]: f["priority"] for f in b["features"]})
+print("\n=== features 산출 (요약) ===")
+for f in b["features"]:
+    print(f"  [{f.get('category')}] {f['feature']}  (origin={f['origin']}, src={f['source'][:48]})")
+print("category 분포:", dict(Counter(f.get("category") for f in b["features"])))
 print("open_questions:", b["open_questions"])
-print("features head status:", fh["status"], "(in_review = 사람 게이트 대기)")
-print("derived_from(불변 provenance, intake/strategy/ux/security 핀):")
-for d in fv["derived_from"]:
-    print("  ", d)
 
-print("\n=== 제약 강제 확인: No-Fabrication (source 없는 기능) ===")
-try:
-    features_agent.validate({
-        "features": [{"feature": "유령 기능", "origin": "fact", "priority": "high"}],
-        "open_questions": [], "provenance": {"features": "per_item"},
-    })
-    print("FAIL: 통과되면 안 됨")
-except ValueError as e:
-    print("정상 차단:", e)
+print("\n=== 4분류·계약 검증 ===")
+CATS = ("Explicit", "Derived", "Operational", "Competitive")
+print("모든 기능 4분류 태깅:", all(f.get("category") in CATS for f in b["features"]))
+print("features에 Business 없음(자동 채택 금지):", all(f.get("category") != "Business" for f in b["features"]))
+print("모든 기능 source 보유:", all(f.get("source") for f in b["features"]))
+comp = [f for f in b["features"] if f.get("category") == "Competitive"]
+print("Competitive Reference 수:", len(comp), "(search on일 때 기대)")
+for f in comp:
+    print(f"  - {f['feature']} | URL: {f['source']}")
+biz_oq = [q for q in b["open_questions"] if "[Business]" in q or "Business" in q]
+print("Business -> open_questions 전환 수:", len(biz_oq))
+for q in biz_oq:
+    print("  -", q)
 
-print("\n=== 제약 강제 확인: 추론 층 분리 (핵심 기능에 derived source) ===")
-try:
-    features_agent.validate({
-        "features": [{"feature": "임의 기능", "source": "derived:추측", "origin": "fact", "priority": "high"}],
-        "open_questions": [], "provenance": {"features": "per_item"},
-    })
-    print("FAIL: 통과되면 안 됨")
-except ValueError as e:
-    print("정상 차단:", e)
+print("\n=== 제약 차단(validate) ===")
+def block(label, feats, prov=None):
+    body = {"features": feats, "open_questions": [], "provenance": prov or {"features": "per_item"}}
+    try:
+        features_agent.validate(body)
+        print(f"{label} -> FAIL: 통과되면 안 됨")
+    except ValueError as e:
+        print(f"{label} -> 정상 차단: {str(e)[:70]}")
 
-print("\n=== 제약 강제 확인: 보완 기능에 ux source(inference인데 ux:) ===")
-try:
-    features_agent.validate({
-        "features": [{"feature": "임의 보완", "source": "ux:개인 신청", "origin": "inference", "priority": "low"}],
-        "open_questions": [], "provenance": {"features": "per_item"},
-    })
-    print("FAIL: 통과되면 안 됨")
-except ValueError as e:
-    print("정상 차단:", e)
+block("source 없는 기능", [{"feature": "유령", "category": "Explicit", "origin": "fact", "priority": "high"}])
+block("4분류 태깅 누락", [{"feature": "무분류", "source": "ux:x", "origin": "fact", "priority": "high"}])
+block("Business를 features에 넣음", [{"feature": "사업판단", "category": "Business", "source": "derived:x", "origin": "inference"}])
+block("Competitive인데 source가 URL 아님",
+      [{"feature": "경쟁참고", "category": "Competitive", "source": "ux:x", "origin": "fact"}],
+      {"features": "per_item"})

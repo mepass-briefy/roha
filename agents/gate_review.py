@@ -98,6 +98,21 @@ def run_review_gate(record_type, body):
                     if t.get("source_reference_id"):
                         reasons.append(f"traceability 위반: baseline 인데 source_reference_id 존재 '{ident}'")
 
+    # features 4분류 태깅 검사(단일 산출물 범위, 추가만). orchestrator 훅은 건드리지 않는다.
+    if record_type == "features":
+        VALID_CATS = ("Explicit", "Derived", "Operational", "Competitive")
+        for f in body.get("features", []):
+            name = f.get("feature")
+            cat = f.get("category")
+            if cat is None:
+                reasons.append(f"4분류 태깅 누락: 기능 '{name}'")
+            elif cat == "Business":
+                reasons.append(f"Business Decision 자동 채택 위반: 기능 '{name}'은 features가 아니라 open_questions로 가야 함")
+            elif cat not in VALID_CATS:
+                reasons.append(f"분류 불가(Fabrication 의심): 기능 '{name}' category='{cat}'")
+            if not f.get("source"):
+                reasons.append(f"근거 없는 기능(Fabrication): '{name}'")
+
     # Provenance: 항목별 표기 존재(각 에이전트 계약 공통)
     if not body.get("provenance"):
         reasons.append("Provenance 표기 없음(계약)")
