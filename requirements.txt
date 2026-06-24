@@ -1,0 +1,2 @@
+# Backend(API) Agent가 응답 검증에 사용. 설치 검증 버전 2.13.4, 하한만 고정.
+pydantic>=2.0
