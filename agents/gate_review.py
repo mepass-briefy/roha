@@ -23,8 +23,8 @@ PASS, WARN, FAIL = "PASS", "WARN", "FAIL"
 
 def _validator(record_type):
     """각 에이전트의 실제 계약(validate 함수 또는 Pydantic 모델)을 반환. 발명 금지."""
-    if record_type == "goal_analysis":
-        import goal_analysis; return ("fn", goal_analysis.validate)
+    if record_type == "discovery":
+        import discovery; return ("fn", discovery.validate)
     if record_type == "strategy":
         import strategy; return ("fn", strategy.validate)
     if record_type == "ux":
@@ -99,6 +99,20 @@ def run_review_gate(record_type, body):
                 elif o == "baseline":
                     if t.get("source_reference_id"):
                         reasons.append(f"traceability 위반: baseline 인데 source_reference_id 존재 '{ident}'")
+
+    # discovery 검사(단일 산출물 범위, 추가만): 구조 + requirement origin + fabrication(원문 근거) 없음.
+    if record_type == "discovery":
+        gi = body.get("goal_interpretation")
+        if not isinstance(gi, dict) or not all(k in gi for k in ("inferred_dimensions", "candidate_metrics", "assumptions")):
+            reasons.append("goal_interpretation 구조 누락(inferred_dimensions/candidate_metrics/assumptions)")
+        if "requirement_normalization" not in body:
+            reasons.append("requirement_normalization 누락")
+        for r in body.get("requirement_normalization", []):
+            rid = r.get("id")
+            if not r.get("origin"):
+                reasons.append(f"requirement '{rid}' origin 누락")
+            if not r.get("statement"):
+                reasons.append(f"fabrication 의심: requirement '{rid}'에 원문 근거(statement) 없음")
 
     # features 4분류 태깅 검사(단일 산출물 범위, 추가만). orchestrator 훅은 건드리지 않는다.
     if record_type == "features":
