@@ -2,3 +2,7 @@
 pydantic>=2.0
 # Strategy Agent real 모드(Anthropic messages API). 설치 검증 버전 0.111.0, 하한만 고정.
 anthropic>=0.40
+# DB(DDL v2) 적용 스크립트(db/setup_db.py)용 PostgreSQL 드라이버. 설치 검증 버전 3.3.4.
+psycopg[binary]>=3.1
+# .env(DATABASE_URL) 로드용. db/setup_db.py가 load_dotenv로 사용.
+python-dotenv>=1.0
