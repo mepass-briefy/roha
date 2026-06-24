@@ -95,7 +95,15 @@ class Endpoint(BaseModel):
     error_cases: List[OutcomeCase]
     acceptance_criteria: List[str] = []
     pagination: Optional[dict] = None
+    exposure: str = "internal"  # internal|public. 현재 전부 internal. 외부 공개는 BACKLOG B3.
     provenance: dict = {}
+
+    @field_validator("exposure")
+    @classmethod
+    def _exposure(cls, v):
+        if v not in ("internal", "public"):
+            raise ValueError(f"exposure는 internal|public 이어야 함('{v}')")
+        return v
 
     @field_validator("endpoint_id")
     @classmethod

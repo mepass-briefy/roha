@@ -16,3 +16,10 @@
 2. 현재 회피: 에이전트별로 검증 방식이 다름(backend=Pydantic, 그 외=if문). 동작은 동일하게 제약을 강제하고 producer 반환은 모두 dict로 일관.
 3. 필요한 변경: 공통 Pydantic 모델/검증 모듈을 만들어 전 에이전트의 validate를 통일. 각 에이전트 body 스키마를 모델로 정의하고 producer는 model_dump()로 dict 반환.
 4. 영향: 전 에이전트의 validate/produce. 구조 변경이라 backlog. 지금은 건드리지 않는다.
+
+## B3. 외부 공개(exposure=public) endpoint의 인증·rate limit
+
+1. 현상: Backend Agent의 endpoint에 exposure 필드(internal|public)를 추가했으나 현재 전부 internal이다. 외부 공개용 endpoint(exposure=public)는 아직 없다.
+2. 현재 회피: 모든 endpoint exposure=internal. 외부 공개 정책 미정의.
+3. 필요한 변경: exposure=public endpoint 도입 시 외부 인증(API key/OAuth 등)과 rate limit 정책을 엔드포인트 계약에 추가해야 한다. 어떤 endpoint를 public으로 노출할지 판단과 정책 모델링이 선행.
+4. 영향: backend.py 계약(엔드포인트 계약에 인증/rate limit 필드), 보안 통제 매핑. 정책·구조 변경이라 backlog. 지금은 건드리지 않는다.
