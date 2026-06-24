@@ -1,0 +1,55 @@
+{
+  "workflow_key": "site-build",
+  "version": 7,
+  "status": "active",
+  "nodes": [
+    {
+      "node_id": "n1",
+      "agent": "human",
+      "produces": "intake",
+      "depends_on": [],
+      "gate": "human",
+      "on_upstream_change": "manual_rerun"
+    },
+    {
+      "node_id": "n2",
+      "agent": "agent.strategy",
+      "produces": "strategy",
+      "depends_on": ["n1"],
+      "gate": "human",
+      "on_upstream_change": "manual_rerun"
+    },
+    {
+      "node_id": "n3",
+      "agent": "agent.ux",
+      "produces": "ux",
+      "depends_on": ["n1", "n2"],
+      "gate": "human",
+      "on_upstream_change": "manual_rerun"
+    },
+    {
+      "node_id": "n4",
+      "agent": "agent.security",
+      "produces": "security",
+      "depends_on": ["n1"],
+      "gate": "human",
+      "on_upstream_change": "manual_rerun"
+    },
+    {
+      "node_id": "n5",
+      "agent": "agent.features",
+      "produces": "features",
+      "depends_on": ["n1", "n2", "n3", "n4"],
+      "gate": "human",
+      "on_upstream_change": "manual_rerun"
+    },
+    {
+      "node_id": "n6",
+      "agent": "agent.backend",
+      "produces": "backend",
+      "depends_on": ["n5", "n4"],
+      "gate": "human",
+      "on_upstream_change": "manual_rerun"
+    }
+  ]
+}
