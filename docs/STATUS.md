@@ -88,7 +88,7 @@ strategy·features에서 검증된 패턴이다. 다른 에이전트 real 전환
 4. provenance 값은 정확히 한 단어("fact"/"inference"/"human"). 설명 텍스트를 붙이지 않는다(validate가 정확 일치를 요구).
 5. fact 항목(경쟁사·수치)은 검색 출처(URL)를 둔다. mock 모드는 그대로 유지(make_producer(llm=...)로 선택).
 
-## 4. BACKLOG 현황 (B1~B6)
+## 4. BACKLOG 현황 (B1~B7)
 
 | 번호 | 내용 요약 | 성격 |
 |---|---|---|
@@ -97,7 +97,8 @@ strategy·features에서 검증된 패턴이다. 다른 에이전트 real 전환
 | B3 | 외부 공개(exposure=public) endpoint의 인증·rate limit. 현재 endpoint는 전부 internal | 정책·구조 변경 |
 | B4 | 게이트 결과의 orchestrator 훅 연결 + FAIL 시 되돌림(Performance Outcomes) | 구조·정책 변경 |
 | B5 | Review Gate의 파이프라인 교차(전파) 검사. 상위 open_question 하위 전파 여부, Silent Omission 탐지, 전파 누락 시 FAIL. 게이트가 다중 record를 받는 구조 확장 | 구조 확장 |
-| B6 | real 모드 web_search 도구 연결. strategy 해당분 해소(커밋 ba3b8c8). 나머지 에이전트(특히 design_system 도메인 시드, features 펼침)로의 확장은 남음 | real 전환 |
+| B6 | real 모드 web_search 도구 연결. strategy·features 해소. 나머지 에이전트(design_system 도메인 시드 등)로의 확장은 남음 | real 전환 |
+| B7 | strategy real이 입력 도메인을 web_search에 안정적으로 고정하지 못함(풋살 입력을 코딩 교육으로 오인하는 비결정성 관찰). 시스템 프롬프트에 도메인 고정 강화 필요. Goal(goal_analysis) 연결로 완화되는지 먼저 관찰 후 대응 | real 품질 |
 
 추가 보류: design_system real 모드 도메인 시드 도출과 image/url 분석(B 트랙·real LLM 선행).
 
@@ -128,6 +129,28 @@ strategy·features에서 검증된 패턴이다. 다른 에이전트 real 전환
 2. 격리는 BYPASSRLS가 없는 role로 연결할 때만 강제된다. Neon 기본 owner(neondb_owner)는 BYPASSRLS=True라 owner 연결은 우회한다(정상 Postgres 동작).
 3. 운영용 non-bypassrls role harness_app을 생성했다(db/create_app_role.sql). 실측: harness_app 기준으로 다른 테넌트 컨텍스트 0행, 자기 테넌트 정상 조회(격리 작동).
 4. API 단계에서 앱을 이 harness_app role(BYPASSRLS 없음)로 연결할 예정이다. 비밀번호·LOGIN은 배포 시 설정.
+
+## 4c. 로컬 API 서버 (B 트랙, 커밋 6eb2321)
+
+FastAPI로 게이트 단위 실행 API를 올렸다. orchestrator/에이전트/게이트/run_harness 로직은 호출만 한다(무수정, run_harness.build_producers 재사용).
+
+1. 엔드포인트 5종: POST /projects(요구->public_key), POST /projects/{public_key}/run(한 칸=다음 READY 노드 동기 실행+게이트 결과), GET /status, GET /records, POST /approve.
+2. 게이트가 요청 경계: run은 한 단계만 동기 실행하고 반환(백그라운드·폴링 없음). human 게이트에서 멈추고 approve로 진행. 게이트 결과는 events(gate_result)로 DB 기록.
+3. STORE=db 기본(.env). real/mock은 환경변수. 식별자 3종: 외부는 public_key만, 내부 PK 비노출(records 응답 type/status/version/body만, 실측 확인).
+4. 실측: mock 플로우(projects->run->status->approve->run->records), real strategy를 API 경로로 1단계 실행 -> Neon 적재 -> API records 읽기 확인.
+
+## 4d. Goal 도입 + Goal Analysis 에이전트 (커밋 507c6eb)
+
+파이프라인 맨 앞에 Goal을 추가하고 Goal Analysis 에이전트를 신규로 만들었다.
+
+1. intake에 goal{statement(필수), details(선택)} 선택 필드 추가(하위호환). Goal 없으면 기존 에이전트 정상 동작(Goal 무시), goal_analysis만 사용.
+2. goal_analysis(real): Goal을 확정이 아니라 해석·가설 제안. 산출 inferred_dimensions/candidate_metrics/assumptions/open_questions가 전부 provenance=inference. 검색 없음(목표 해석은 추론). GOAL_MODE=real|mock.
+3. 실측: 막연한 Goal("동네 풋살 모임 활성화", details 비움)을 단정 없이 해석(4차원·5지표·confidence·6 open_questions). 게이트 TEST/REVIEW WARN.
+4. workflow v10: goal_analysis를 intake 다음·strategy 앞에 추가(depends_on intake). gate_review에 goal_analysis 매핑 추가(검사기 확장).
+
+### 4d.1 미연결 (의도된 보류)
+
+strategy가 Goal Confirmed를 입력으로 받는 연결은 보류한다. Goal Confirmed는 Workbench에서 사람이 확정해야 생기므로 UI가 선행이다. 순서: Workbench UI -> Goal Confirmed -> strategy 연결.
 
 ## 5. open_questions 현황 (성격별 분류)
 
@@ -165,10 +188,10 @@ strategy·features에서 검증된 패턴이다. 다른 에이전트 real 전환
 | 일차 | 작업 | 상태 |
 |---|---|---|
 | 1일차 | DB 전환(Neon DDL v2 + PgStore 8테이블 적재) | 완료(bd86f5c) |
-| 2일차 | features real 전환 | 완료(e552d2b) |
-| 2일차(남음) | 로컬 하네스 러너(STORE=db 전체 파이프라인 실행 스크립트, 로컬 직접 실행) | 예정 |
-| 3-4일차 | API 계층(PgStore 위 조회·트리거) | 예정 |
-| 5-6일차 | UI(작업 콘솔: 진행·게이트 승인·산출 열람) | 예정 |
+| 2일차 | features real 전환 + 로컬 하네스 러너 | 완료(e552d2b, 770b7a2) |
+| 3-4일차 | API 계층(FastAPI 5종 엔드포인트, 게이트 단위 실행) | 완료(6eb2321) |
+| Goal | Goal 도입 + Goal Analysis 에이전트 | 완료(507c6eb) |
+| 5-6일차 | Workbench UI(최상위=Goal Analysis 검토, Material 3. 진행·게이트 승인·산출 열람) | 예정 |
 | 7일차 | 통합 | 예정 |
 
 설계 메모
