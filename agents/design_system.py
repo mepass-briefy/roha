@@ -1,12 +1,12 @@
 """
-Design System Agent producer.
+Design System Agent producer (재정의: Material 3 tonal + Reference Contract).
 
-orchestrator 계약: producer(inputs: dict) -> body: dict
-모델 호출은 llm(system, user) -> str 인터페이스로 분리한다.
-  - real: positioning/ux_principles를 반영하는 Claude 서브에이전트로 교체되는 자리
-  - offline: 결정적. intake.brand_tokens와 ux_principles만 사용. 색 파생은 결정적 알고리즘. 발명 금지.
+orchestrator 계약: producer(inputs: dict) -> body: dict (canonical 비교 유지).
+모델 호출은 llm(system, user) -> str. offline은 결정적(reference token 즉시 적용, image/url은 open_questions, baseline fallback).
 
-산출물은 제품 UI용 디자인 시스템(색/타이포/간격/라운드/엘리베이션/컴포넌트/아이콘/접근성/CSS 변수)이다.
+seed -> Material 3 tonal palette(Light/Dark mirror, surface container 톤 5단계, 의미색 tonal, WCAG AA).
+derive_seed(strategy, intake, references)가 seed·폰트·아이콘·origin 단일 진입점.
+모든 토큰은 token_key/value/origin(+source_reference_id) 단위 traceability를 갖는다.
 본 에이전트는 body만 반환한다. 버전/derived_from/status는 orchestrator 책임.
 """
 
@@ -16,269 +16,381 @@ from pathlib import Path
 AGENT_NAME = "agent.design_system"
 SYSTEM_PROMPT = Path(__file__).with_name("agent_design_system.md").read_text(encoding="utf-8")
 
-ALLOWED_ORIGINS = ("fact", "human", "inference", "baseline")
+# B6: baseline 고정 세트(추론이 아니라 정해진 fallback)
+BASELINE_SEED = "#6750A4"      # Material 3 baseline primary
+BASELINE_SECONDARY = "#625B71"
+BASELINE_FONT = "Pretendard"
+BASELINE_ICONS = "Tabler"
+NEUTRAL_SEED = "#787579"       # 토대 중립(브랜드 무관, 항상 baseline)
 
-# 시스템 베이스라인(브랜드 무관, WCAG/SaaS 관례). 라이트 중립 팔레트.
-LIGHT_NEUTRALS = [
-    ("color-bg-base", "#FFFFFF", "페이지 기본 배경"),
-    ("color-bg-subtle", "#F8FAFC", "테이블 헤더, 사이드바 배경"),
-    ("color-surface", "#FFFFFF", "카드, 인풋 배경"),
-    ("color-border", "#E2E8F0", "기본 보더"),
-    ("color-text-primary", "#1E293B", "본문, 제목"),
-    ("color-text-secondary", "#64748B", "서브 텍스트"),
-    ("color-text-muted", "#94A3B8", "플레이스홀더, 컬럼 헤더"),
-]
-# 다크 중립 팔레트. 라이트 중립의 다크 모드 변환(파생, inference).
-DARK_NEUTRALS = [
-    ("color-bg-base", "#111116", "앱 기본 배경"),
-    ("color-surface", "#1C1C28", "카드"),
-    ("color-border", "#2E2E3E", "카드 테두리, 구분선"),
-    ("color-text-primary", "#FFFFFF", "제목, 주요 수치"),
-    ("color-text-secondary", "#A0A0C0", "서브 텍스트"),
-    ("color-text-muted", "#6E6E8A", "타임스탬프, 레이블"),
-]
-SPACING = [
-    ("sp-1", "4px", "아이콘-텍스트 gap"), ("sp-2", "8px", "배지 패딩"),
-    ("sp-3", "12px", "nav gap, 셀 패딩"), ("sp-4", "16px", "섹션/카드 패딩"),
-    ("sp-6", "24px", "카드 패딩(Web)"), ("sp-10", "40px", "페이지 헤더 offset"),
-]
-RADIUS = [
-    ("r-sm", "4px", "뱃지, 태그"), ("r-md", "6px", "버튼, 인풋"),
-    ("r-lg", "10px", "카드, 패널"), ("r-xl", "16px", "모바일 카드"),
-]
-ELEVATION = [
-    ("shadow-soft", "0 1px 3px rgba(0,0,0,0.06)", "Web hover/focus"),
-    ("focus-ring", "0 0 0 3px rgba(37,99,235,0.10)", "인풋 focus"),
-    ("shadow-none", "none", "Mobile(배경 대비로만 계층)"),
-]
-SEMANTIC_DEFAULTS = [
-    ("success", "#22C55E", "성공 상태, Active 뱃지"),
-    ("warning", "#D97706", "경고, Delayed 뱃지"),
-    ("danger", "#DC2626", "위험, Critical 뱃지"),
-]
-SYSTEM_FONT = "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
+SEM_SEEDS = {"success": "#16A34A", "warning": "#D97706", "danger": "#DC2626", "info": "#2563EB"}
+PRIMITIVES = ("button", "input", "badge", "table", "card", "nav")
+WCAG_AA = 4.5
+
+# E: override 가능 키(표현층). color.* 와 font.family/font.weight 만 offline 허용.
+def _in_whitelist(key):
+    return key.startswith("color.") or key in ("font.family", "font.weight")
+
+ALLOWED_ORIGINS = ("baseline", "reference-token", "reference-image", "reference-url")
 
 
-def build_user_prompt(intake: dict, ux: dict, strategy: dict) -> str:
-    return json.dumps({"intake": intake, "ux": ux, "strategy": strategy}, ensure_ascii=False)
+# ---------------- 색 유틸 ----------------
+def _hex_to_rgb(h):
+    h = h.lstrip("#")
+    return tuple(int(h[i:i + 2], 16) for i in (0, 2, 4))
 
 
-def _hex(c):
-    c = c.lstrip("#")
-    return int(c[0:2], 16), int(c[2:4], 16), int(c[4:6], 16)
+def _rgb_to_hex(r, g, b):
+    return "#{:02X}{:02X}{:02X}".format(max(0, min(255, round(r))), max(0, min(255, round(g))), max(0, min(255, round(b))))
 
 
-def _mix(hex1, hex2, w):
-    """hex1에 hex2를 비율 w로 섞는다. 결정적 파생."""
-    r1, g1, b1 = _hex(hex1)
-    r2, g2, b2 = _hex(hex2)
-    r = round(r1 * (1 - w) + r2 * w)
-    g = round(g1 * (1 - w) + g2 * w)
-    b = round(b1 * (1 - w) + b2 * w)
-    return "#{:02X}{:02X}{:02X}".format(r, g, b)
+def _rgb_to_hsl(r, g, b):
+    r, g, b = r / 255.0, g / 255.0, b / 255.0
+    mx, mn = max(r, g, b), min(r, g, b)
+    l = (mx + mn) / 2.0
+    if mx == mn:
+        return 0.0, 0.0, l
+    d = mx - mn
+    s = d / (2.0 - mx - mn) if l > 0.5 else d / (mx + mn)
+    if mx == r:
+        h = (g - b) / d + (6 if g < b else 0)
+    elif mx == g:
+        h = (b - r) / d + 2
+    else:
+        h = (r - g) / d + 4
+    return h / 6.0, s, l
 
 
-def _check_origin(origin, source, where):
-    """source 형식과 origin 정합성을 강제한다(추론 층 분리)."""
-    if not source:
-        raise ValueError(f"No-Fabrication 위반: source 없는 항목 '{where}'")
-    if origin not in ALLOWED_ORIGINS:
-        raise ValueError(f"허용되지 않은 origin '{origin}' ({where})")
-    if source.startswith("brand_tokens"):
-        if origin not in ("fact", "human"):
-            raise ValueError(f"추론 층 분리 위반: 입력 토큰 '{where}'는 fact|human이어야 함(현재 {origin})")
-    elif source.startswith("derived"):
-        if origin != "inference":
-            raise ValueError(f"추론 층 분리 위반: 파생 토큰 '{where}'는 inference여야 함(현재 {origin})")
-    elif source.startswith("baseline"):
-        if origin != "baseline":
-            raise ValueError(f"추론 층 분리 위반: 베이스라인 '{where}'는 baseline이어야 함(현재 {origin})")
+def _hue(p, q, t):
+    if t < 0:
+        t += 1
+    if t > 1:
+        t -= 1
+    if t < 1 / 6:
+        return p + (q - p) * 6 * t
+    if t < 1 / 2:
+        return q
+    if t < 2 / 3:
+        return p + (q - p) * (2 / 3 - t) * 6
+    return p
+
+
+def _hsl_to_rgb(h, s, l):
+    if s == 0:
+        v = l * 255
+        return v, v, v
+    q = l * (1 + s) if l < 0.5 else l + s - l * s
+    p = 2 * l - q
+    return _hue(p, q, h + 1 / 3) * 255, _hue(p, q, h) * 255, _hue(p, q, h - 1 / 3) * 255
+
+
+def _tone(seed_hex, tone, neutral=False):
+    """seed의 tonal palette에서 주어진 tone(0~100)을 lightness로 매핑(Material 3 근사). neutral은 채도 억제."""
+    r, g, b = _hex_to_rgb(seed_hex)
+    h, s, _ = _rgb_to_hsl(r, g, b)
+    if neutral:
+        s = min(s, 0.06)
+    rr, gg, bb = _hsl_to_rgb(h, s, tone / 100.0)
+    return _rgb_to_hex(rr, gg, bb)
+
+
+def _luminance(hexv):
+    def lin(c):
+        c = c / 255.0
+        return c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4
+    r, g, b = _hex_to_rgb(hexv)
+    return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b)
+
+
+def _contrast(a, b):
+    la, lb = _luminance(a), _luminance(b)
+    hi, lo = max(la, lb), min(la, lb)
+    return (hi + 0.05) / (lo + 0.05)
+
+
+def _best_on(color):
+    return "#FFFFFF" if _contrast("#FFFFFF", color) >= _contrast("#000000", color) else "#000000"
+
+
+# ---------------- B: seed 도출 ----------------
+def derive_seed(strategy, intake, references):
+    """seed·폰트·아이콘·origin을 결정하는 단일 진입점. offline: token 즉시 적용, image/url은 보류."""
+    references = references or []
+    open_questions = []
+    conflicts = []
+    whitelist_violations = []
+    wcag_warnings = []
+    applied = {}  # key -> (value, reference_id)
+
+    by_type = {"token": [], "image": [], "url": []}
+    for ref in references:
+        by_type.get(ref.get("type"), by_type.setdefault(ref.get("type"), [])).append(ref)
+
+    # offline: image/url 분석 금지 -> open_questions (우선순위상 token 아래)
+    for ref in by_type.get("image", []):
+        open_questions.append(f"reference {ref.get('reference_id')}(image): offline 분석 불가 -> 보류(real 모드 필요)")
+    for ref in by_type.get("url", []):
+        open_questions.append(f"reference {ref.get('reference_id')}(url): offline 분석 불가 -> 보류(real 모드 필요)")
+
+    # token type: 같은 key 충돌 검출(임의 선택 금지) + whitelist + WCAG
+    keymap = {}
+    for ref in by_type.get("token", []):
+        for k, v in (ref.get("value") or {}).items():
+            keymap.setdefault(k, []).append((v, ref.get("reference_id")))
+    for k, vals in keymap.items():
+        distinct = {v for v, _ in vals}
+        if len(distinct) > 1:
+            conflicts.append(k)
+            open_questions.append(f"reference 충돌: '{k}' 값이 {sorted(distinct)}로 불일치 -> 사용자 확인 필요(임의 선택 금지)")
+            continue
+        if not _in_whitelist(k):
+            whitelist_violations.append(k)
+            open_questions.append(f"override 범위 밖 요청 무시: '{k}'(토대 토큰은 변경 불가)")
+            continue
+        val, rid = vals[0]
+        if k.startswith("color."):
+            # accent 색이 라이트 표면(흰색) 위에서 본문 대비 4.5:1을 못 넘으면 경고
+            if _contrast(val, "#FFFFFF") < WCAG_AA:
+                wcag_warnings.append(k)
+                open_questions.append(f"제공된 색 '{k}'={val} 대비 미달(WCAG AA 4.5:1, 흰 배경 기준) -> 적용하되 확인 필요")
+        applied[k] = (val, rid)
+
+    has_ref_token = bool(applied)
+    seed_primary = applied.get("color.primary", (BASELINE_SEED, None))[0]
+    seed_secondary = applied.get("color.secondary", (BASELINE_SECONDARY, None))[0]
+    font_family = applied.get("font.family", (BASELINE_FONT, None))[0]
+
+    if not references:
+        open_questions.append("브랜드 reference 미제공, 기본 세트 사용 중(Material 3 baseline seed + Pretendard + Tabler)")
+    elif not has_ref_token:
+        open_questions.append("적용 가능한 token reference 없음 -> baseline 세트 사용 중")
+
+    return {
+        "primary": seed_primary,
+        "secondary": seed_secondary,
+        "font_family": font_family,
+        "icon_pack": BASELINE_ICONS,
+        "source": "reference-token" if "color.primary" in applied else "baseline",
+        "source_reference_id": applied.get("color.primary", (None, None))[1],
+        "_applied": applied,
+        "_open_questions": open_questions,
+        "_conflicts": conflicts,
+        "_whitelist_violations": whitelist_violations,
+        "_wcag_warnings": wcag_warnings,
+    }
+
+
+def _origin_for(brand_key, applied):
+    if brand_key and brand_key in applied:
+        return "reference-token", applied[brand_key][1]
+    return "baseline", None
+
+
+def build_user_prompt(intake, strategy, ux):
+    return json.dumps({"intake": intake, "strategy": strategy, "ux": ux}, ensure_ascii=False)
+
+
+# ---------------- 산출 빌드 ----------------
+def _build_body(intake, strategy, ux):
+    references = intake.get("references", []) if isinstance(intake, dict) else []
+    seed = derive_seed(strategy, intake, references)
+    applied = seed["_applied"]
+    open_questions = list(seed["_open_questions"])
+    primary = seed["primary"]
+    secondary = seed["secondary"]
+
+    tokens = []  # F: 토큰 단위 traceability
+
+    def push(token_key, value, brand_key=None):
+        origin, rid = _origin_for(brand_key, applied)
+        tokens.append({"token_key": token_key, "value": value,
+                       "source_reference_id": rid, "origin": origin})
+        return value
+
+    # Foundation color: Light(진한 톤)/Dark(밝은 톤) mirror
+    color = {"light": {}, "dark": {}}
+    # primary family (brand_key=color.primary)
+    color["light"]["primary"] = push("color.light.primary", _tone(primary, 40), "color.primary")
+    color["light"]["on-primary"] = push("color.light.on-primary", _tone(primary, 100), "color.primary")
+    color["light"]["primary-container"] = push("color.light.primary-container", _tone(primary, 90), "color.primary")
+    color["light"]["on-primary-container"] = push("color.light.on-primary-container", _tone(primary, 10), "color.primary")
+    color["dark"]["primary"] = push("color.dark.primary", _tone(primary, 80), "color.primary")
+    color["dark"]["on-primary"] = push("color.dark.on-primary", _tone(primary, 20), "color.primary")
+    color["dark"]["primary-container"] = push("color.dark.primary-container", _tone(primary, 30), "color.primary")
+    color["dark"]["on-primary-container"] = push("color.dark.on-primary-container", _tone(primary, 90), "color.primary")
+    # secondary
+    color["light"]["secondary"] = push("color.light.secondary", _tone(secondary, 40), "color.secondary")
+    color["dark"]["secondary"] = push("color.dark.secondary", _tone(secondary, 80), "color.secondary")
+    # neutral / surface / outline (항상 baseline)
+    color["light"]["surface"] = push("color.light.surface", _tone(NEUTRAL_SEED, 98, neutral=True))
+    color["light"]["on-surface"] = push("color.light.on-surface", _tone(NEUTRAL_SEED, 10, neutral=True))
+    color["light"]["outline"] = push("color.light.outline", _tone(NEUTRAL_SEED, 50, neutral=True))
+    color["dark"]["surface"] = push("color.dark.surface", _tone(NEUTRAL_SEED, 6, neutral=True))
+    color["dark"]["on-surface"] = push("color.dark.on-surface", _tone(NEUTRAL_SEED, 90, neutral=True))
+    color["dark"]["outline"] = push("color.dark.outline", _tone(NEUTRAL_SEED, 60, neutral=True))
+
+    # A2: surface container 톤 5단계(lowest~highest). 다크 base #121212 계열.
+    surface_tones = {
+        "light": {n: push(f"color.light.surface-container-{n}", _tone(NEUTRAL_SEED, t, neutral=True))
+                  for n, t in (("lowest", 100), ("low", 96), ("base", 94), ("high", 92), ("highest", 90))},
+        "dark": {n: push(f"color.dark.surface-container-{n}", _tone(NEUTRAL_SEED, t, neutral=True))
+                 for n, t in (("lowest", 4), ("low", 10), ("base", 12), ("high", 17), ("highest", 22))},
+    }
+
+    # Semantic: state mapping (각자 tonal, 다크는 밝은 톤)
+    state_mapping = []
+    for state, sseed in SEM_SEEDS.items():
+        bk = f"color.{state}"
+        sval = applied.get(bk, (sseed, None))[0]
+        if bk in applied and _contrast(sval, "#FFFFFF") < WCAG_AA:
+            open_questions.append(f"제공된 의미색 '{bk}'={sval} 대비 미달(WCAG AA, 흰 배경 기준) -> 적용하되 확인 필요")
+        light_v = push(f"color.light.{state}", _tone(sval, 40), bk)
+        dark_v = push(f"color.dark.{state}", _tone(sval, 80), bk)
+        state_mapping.append({"state": state, "light": light_v, "dark": dark_v})
+
+    # Semantic: ui_intent
+    ui_intent = [
+        {"intent": "primary", "light": color["light"]["primary"], "dark": color["dark"]["primary"]},
+        {"intent": "secondary", "light": color["light"]["secondary"], "dark": color["dark"]["secondary"]},
+        {"intent": "destructive", "light": next(s["light"] for s in state_mapping if s["state"] == "danger"),
+         "dark": next(s["dark"] for s in state_mapping if s["state"] == "danger")},
+        {"intent": "disabled", "light": _tone(NEUTRAL_SEED, 80, neutral=True), "dark": _tone(NEUTRAL_SEED, 40, neutral=True)},
+    ]
+
+    # Typography
+    font_origin, font_rid = _origin_for("font.family", applied)
+    tokens.append({"token_key": "font.family", "value": seed["font_family"],
+                   "source_reference_id": font_rid, "origin": font_origin})
+    typography = {
+        "font_family": {"value": seed["font_family"], "origin": font_origin, "source_reference_id": font_rid},
+        "scale": [
+            {"role": "display", "size": "28px", "weight": 700},
+            {"role": "title", "size": "20px", "weight": 600},
+            {"role": "body", "size": "14px", "weight": 400},
+            {"role": "label", "size": "12px", "weight": 500},
+        ],
+        "principles": ["weight 400/500/600/700만 사용", "줄간격 본문 1.6 / 제목 1.2"],
+    }
+
+    # spacing / radius (토대, baseline)
+    spacing = []
+    for t, v in (("sp-1", "4px"), ("sp-2", "8px"), ("sp-3", "12px"), ("sp-4", "16px"), ("sp-6", "24px"), ("sp-10", "40px")):
+        push(f"spacing.{t}", v)
+        spacing.append({"token": t, "value": v})
+    radius = []
+    for t, v in (("r-sm", "4px"), ("r-md", "8px"), ("r-lg", "12px"), ("r-xl", "16px")):
+        push(f"radius.{t}", v)
+        radius.append({"token": t, "value": v})
+
+    # Component: 6종, 상태별 + 터치타겟 44px + elevation (토대, override 불가)
+    component = []
+    for name in PRIMITIVES:
+        component.append({
+            "component": name,
+            "states": {
+                "enabled": {"bg": "color.light.primary" if name in ("button",) else "color.light.surface",
+                            "fg": "color.light.on-primary" if name in ("button",) else "color.light.on-surface"},
+                "hover": {"bg": "color.light.primary-container"},
+                "focus": {"outline": "color.light.outline"},
+                "disabled": {"bg": "ui_intent.disabled"},
+            },
+            "touch_target": "44x44px",
+            "elevation": "surface-container",
+            "uses_tokens": ["color.light.primary", "color.light.surface", "color.light.outline", "radius.r-md", "spacing.sp-2"],
+        })
+
+    governance = {
+        "accessibility": {"min_touch_target": "44x44px", "contrast": "WCAG AA 4.5:1",
+                          "min_input_height": "44px", "min_text_size": "11px"},
+        "interaction": {"states": ["enabled", "hover", "focus", "disabled"]},
+        "responsiveness": {"modes": ["light", "dark"], "dynamic_color": False},
+    }
+    # G20: 근거 없는 레이어는 open_questions
+    open_questions.append("pattern 레이어: 근거(features 도메인 상태) 없음 -> 보류(자리만)")
+    open_questions.append("motion 레이어: 근거 없음 -> 미정의")
+
+    body = {
+        "seed": {"primary": seed["primary"], "secondary": seed["secondary"],
+                 "font_family": seed["font_family"], "icon_pack": seed["icon_pack"],
+                 "source": seed["source"], "source_reference_id": seed["source_reference_id"]},
+        "foundation": {"color": color, "surface_tones": surface_tones,
+                       "typography": typography, "spacing": spacing, "radius": radius},
+        "semantic": {"state_mapping": state_mapping, "ui_intent": ui_intent},
+        "component": component,
+        "pattern": [],
+        "governance": governance,
+        "tokens": tokens,
+        "reference": {
+            "applied": [{"token_key": k, "value": v, "source_reference_id": rid} for k, (v, rid) in applied.items()],
+            "conflicts": seed["_conflicts"],
+            "whitelist_violations": seed["_whitelist_violations"],
+            "wcag_warnings": seed["_wcag_warnings"],
+        },
+        "open_questions": open_questions,
+        "provenance": {
+            "seed": seed["source"],
+            "foundation": "baseline",
+            "semantic": "baseline",
+            "component": "baseline",
+            "governance": "baseline",
+            "tokens": "per_token",
+            "reference_analysis": "inference",
+        },
+    }
+    return body
 
 
 def validate(body: dict) -> dict:
-    """합의된 제약을 코드로 강제한다. 위반 시 raise."""
-    required = {"color_tokens", "typography", "spacing", "radius", "elevation",
-                "component_specs", "icon", "accessibility", "css_variables_template",
-                "open_questions", "provenance"}
+    """재정의 계약을 코드로 강제한다. 위반 시 raise."""
+    required = {"seed", "foundation", "semantic", "component", "pattern",
+                "governance", "tokens", "reference", "open_questions", "provenance"}
     missing = required - set(body)
     if missing:
         raise ValueError(f"design_system body 필드 누락: {missing}")
 
-    defined_tokens = set()
+    # F: 토큰 단위 traceability
+    if not body["tokens"]:
+        raise ValueError("tokens 비어 있음(traceability 없음)")
+    for t in body["tokens"]:
+        if not t.get("token_key") or "value" not in t:
+            raise ValueError(f"토큰 token_key/value 누락: {t}")
+        origin = t.get("origin")
+        if origin not in ALLOWED_ORIGINS:
+            raise ValueError(f"traceability 위반: origin 없음/허용 안 됨 '{origin}' ({t.get('token_key')})")
+        if origin.startswith("reference-") and not t.get("source_reference_id"):
+            raise ValueError(f"traceability 위반: {origin} 인데 source_reference_id 없음 ({t['token_key']})")
+        if origin == "baseline" and t.get("source_reference_id"):
+            raise ValueError(f"traceability 위반: baseline 인데 source_reference_id 존재 ({t['token_key']})")
+    if body["provenance"].get("tokens") != "per_token":
+        raise ValueError("provenance.tokens는 per_token이어야 함")
 
-    # color_tokens: source 필수(No-Fabrication) + origin/source 정합성(추론 층 분리)
-    for c in body["color_tokens"]:
-        _check_origin(c.get("origin"), c.get("source"), f"color_token:{c.get('token')}")
-        defined_tokens.add(c["token"])
+    # E12: 컴포넌트 6종 구조 보존(발명 금지)
+    comps = [c["component"] for c in body["component"]]
+    if set(comps) != set(PRIMITIVES):
+        raise ValueError(f"컴포넌트 6종 불변 위반: {comps} (기대 {list(PRIMITIVES)})")
 
-    if body["color_tokens"] and body["provenance"].get("color_tokens") != "per_token":
-        raise ValueError("provenance.color_tokens는 per_token이어야 함(토큰별 origin 표기)")
-
-    # typography.font_family도 핵심 토큰 규칙 적용
-    ff = body["typography"].get("font_family")
-    if ff:
-        _check_origin(ff.get("origin"), ff.get("source"), "typography.font_family")
-
-    # spacing/radius 토큰을 정의 집합에 추가
-    for s in body["spacing"]:
-        defined_tokens.add(s["token"])
-    for r in body["radius"]:
-        defined_tokens.add(r["token"])
-
-    # 컴포넌트 uses_tokens 무결성: 정의된 토큰만 참조(발명 금지)
-    for comp in body["component_specs"]:
-        for tk in comp.get("uses_tokens", []):
-            if tk not in defined_tokens:
-                raise ValueError(f"발명된 토큰 참조 in component '{comp.get('component')}': '{tk}' (정의되지 않음)")
+    # 접근성 토대(터치타겟 44px·WCAG) 불변
+    acc = body["governance"].get("accessibility", {})
+    if acc.get("min_touch_target") != "44x44px":
+        raise ValueError("접근성 토대 위반: 터치타겟 44x44px 불변")
+    if "WCAG AA" not in (acc.get("contrast") or ""):
+        raise ValueError("접근성 토대 위반: WCAG AA 기준 불변")
 
     return body
 
 
 def offline_llm(system: str, user: str) -> str:
-    """결정적 오프라인 모드. brand_tokens와 ux_principles만 사용. 발명 금지."""
+    """결정적 오프라인 모드. reference token 즉시 적용, image/url은 open_questions, baseline fallback."""
     payload = json.loads(user)
-    intake = payload["intake"]
-    ux = payload.get("ux", {}) or {}
-    strategy = payload.get("strategy", {}) or {}
-
-    brand = intake.get("brand_tokens", {}) or {}
-    ux_principles = ux.get("ux_principles", [])
-    accent = brand.get("accent")
-
-    color_tokens = []
-    component_specs = []
-    open_questions = []
-
-    if not accent:
-        # No-Fabrication: 근거(accent) 없으면 색·컴포넌트를 만들지 않는다.
-        open_questions.append("브랜드 accent 토큰 미제공: 색 토큰·컴포넌트 생성 불가(No-Fabrication)")
-    else:
-        # 핵심: 입력 accent (human)
-        color_tokens.append({"token": "color-accent", "value": accent, "mode": "shared",
-                             "origin": "human", "source": "brand_tokens.accent",
-                             "usage": "CTA 버튼, 활성 탭, 링크"})
-        # 파생: tint(밝게), hover(어둡게) — inference
-        color_tokens.append({"token": "color-accent-tint", "value": _mix(accent, "#FFFFFF", 0.90),
-                             "mode": "light", "origin": "inference",
-                             "source": "derived: color-accent + 90% white", "usage": "활성 nav 배경, 뱃지 배경"})
-        color_tokens.append({"token": "color-accent-hover", "value": _mix(accent, "#000000", 0.12),
-                             "mode": "shared", "origin": "inference",
-                             "source": "derived: color-accent darken 12%", "usage": "버튼 hover"})
-        # semantic: 입력 있으면 human, 없으면 표준 제안(inference) + open_question
-        for key, std, usage in SEMANTIC_DEFAULTS:
-            if brand.get(key):
-                color_tokens.append({"token": f"color-{key}", "value": brand[key], "mode": "shared",
-                                     "origin": "human", "source": f"brand_tokens.{key}", "usage": usage})
-            else:
-                color_tokens.append({"token": f"color-{key}", "value": std, "mode": "shared",
-                                     "origin": "inference", "source": "derived: 표준 의미색 제안(검증 필요)", "usage": usage})
-                open_questions.append(f"의미색 '{key}' 미제공: 표준값 {std} 제안, 브랜드 확인 필요")
-        # 중립 라이트: baseline
-        for token, value, usage in LIGHT_NEUTRALS:
-            color_tokens.append({"token": token, "value": value, "mode": "light", "origin": "baseline",
-                                 "source": "baseline: SaaS 라이트 중립 팔레트(WCAG AA)", "usage": usage})
-        # 중립 다크: 라이트의 다크 변환(파생, inference)
-        for token, value, usage in DARK_NEUTRALS:
-            color_tokens.append({"token": token, "value": value, "mode": "dark", "origin": "inference",
-                                 "source": "derived: 라이트 중립의 다크 모드 변환", "usage": usage})
-
-        # 컴포넌트 명세: 정의된 토큰만 참조
-        component_specs = [
-            {"component": "button",
-             "spec": {"height": "34px", "padding": "7px 14px", "font_size": "13px", "font_weight": 500,
-                      "primary_bg": "color-accent", "primary_text": "#FFFFFF", "hover_bg": "color-accent-hover"},
-             "uses_tokens": ["color-accent", "color-accent-hover", "r-md", "sp-2"]},
-            {"component": "input",
-             "spec": {"height": "34px", "padding": "0 10px", "border": "0.5px solid color-border",
-                      "focus_border": "color-accent", "focus_ring": "focus-ring"},
-             "uses_tokens": ["color-border", "color-accent", "r-md"]},
-            {"component": "badge",
-             "spec": {"padding": "2px 8px", "font_size": "11px", "font_weight": 500,
-                      "bg": "color-accent-tint", "text": "color-accent"},
-             "uses_tokens": ["color-accent-tint", "color-accent", "r-sm"]},
-            {"component": "table",
-             "spec": {"header_bg": "color-bg-subtle", "header_text": "color-text-muted",
-                      "row_text": "color-text-primary", "row_border": "color-border", "hover_bg": "color-bg-subtle"},
-             "uses_tokens": ["color-bg-subtle", "color-text-muted", "color-text-primary", "color-border", "sp-3"]},
-            {"component": "card",
-             "spec": {"bg": "color-surface", "border": "0.5px solid color-border", "padding": "sp-6",
-                      "title_text": "color-text-primary", "sub_text": "color-text-secondary"},
-             "uses_tokens": ["color-surface", "color-border", "color-text-primary", "color-text-secondary", "r-lg", "sp-6"]},
-            {"component": "nav",
-             "spec": {"item_text": "color-text-secondary", "active_bg": "color-accent-tint",
-                      "active_text": "color-accent", "hover_bg": "color-bg-subtle"},
-             "uses_tokens": ["color-text-secondary", "color-accent-tint", "color-accent", "color-bg-subtle", "r-md", "sp-3"]},
-        ]
-
-    # typography
-    font_family = brand.get("font_family")
-    if font_family:
-        ff = {"value": font_family, "origin": "human", "source": "brand_tokens.font_family"}
-    else:
-        ff = {"value": SYSTEM_FONT, "origin": "baseline", "source": "baseline: 시스템 sans-serif"}
-        open_questions.append("브랜드 폰트 미제공: 시스템 sans-serif 사용")
-    typography = {
-        "font_family": ff,
-        "scale": [
-            {"role": "페이지 제목", "size": "22px", "weight": 500, "color_token": "color-text-primary"},
-            {"role": "카드 주 텍스트", "size": "14px", "weight": 500, "color_token": "color-text-primary"},
-            {"role": "본문/테이블", "size": "13px", "weight": 400, "color_token": "color-text-secondary"},
-            {"role": "컬럼 헤더", "size": "12px", "weight": 400, "color_token": "color-text-muted"},
-            {"role": "뱃지 레이블", "size": "11px", "weight": 500, "color_token": "color-accent"},
-        ],
-        "principles": ["weight는 400/500/600/700만 사용", "줄간격 본문 1.6 / 제목 1.2", "uppercase 레이블 자간 0.06em"],
-    }
-
-    spacing = [{"token": t, "value": v, "usage": u} for t, v, u in SPACING]
-    radius = [{"token": t, "value": v, "usage": u} for t, v, u in RADIUS]
-    elevation = [{"token": t, "value": v, "usage": u} for t, v, u in ELEVATION]
-    icon = {"library": "Tabler Icons (outline 전용)",
-            "sizes": {"web_inline": "16px", "web_decorative": "20px", "mobile_nav": "20px", "mobile_card": "13-16px"},
-            "origin": "baseline", "source": "baseline: Tabler outline 아이콘 세트"}
-    accessibility = {"min_touch_target": "44x44px", "min_input_height": "34px",
-                     "min_text_size": "11px", "contrast": "WCAG AA 4.5:1"}
-
-    # CSS 변수 템플릿: 정의된 토큰에서 생성(derived)
-    light_lines = [f"  --{c['token']}: {c['value']};" for c in color_tokens if c["mode"] in ("shared", "light")]
-    dark_lines = [f"    --{c['token']}: {c['value']};" for c in color_tokens if c["mode"] == "dark"]
-    sp_lines = [f"  --{s['token']}: {s['value']};" for s in spacing]
-    r_lines = [f"  --{r['token']}: {r['value']};" for r in radius]
-    css_parts = [":root {"] + light_lines + sp_lines + r_lines + ["}"]
-    if dark_lines:
-        css_parts += ["@media (prefers-color-scheme: dark) {", "  :root {"] + dark_lines + ["  }", "}"]
-    css_variables_template = "\n".join(css_parts)
-
-    body = {
-        "color_tokens": color_tokens,
-        "typography": typography,
-        "spacing": spacing,
-        "radius": radius,
-        "elevation": elevation,
-        "component_specs": component_specs,
-        "icon": icon,
-        "accessibility": accessibility,
-        "css_variables_template": css_variables_template,
-        "open_questions": open_questions,
-        "provenance": {
-            "color_tokens": "per_token",
-            "typography": "per_field",
-            "spacing": "baseline",
-            "radius": "baseline",
-            "elevation": "baseline",
-            "component_specs": "inference",
-            "icon": "baseline",
-            "accessibility": "baseline",
-            "css_variables_template": "derived",
-        },
-    }
+    body = _build_body(payload.get("intake", {}) or {}, payload.get("strategy", {}) or {}, payload.get("ux", {}) or {})
     return json.dumps(body, ensure_ascii=False)
 
 
 def produce(inputs: dict, llm=offline_llm) -> dict:
     intake = inputs["intake"]
-    ux = inputs.get("ux", {})
     strategy = inputs.get("strategy", {})
-    raw = llm(SYSTEM_PROMPT, build_user_prompt(intake, ux, strategy))
+    ux = inputs.get("ux", {})
+    raw = llm(SYSTEM_PROMPT, build_user_prompt(intake, strategy, ux))
     raw = raw.replace("```json", "").replace("```", "").strip()
     body = json.loads(raw)
     return validate(body)

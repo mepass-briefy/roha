@@ -1,134 +1,120 @@
 """
-Design System Agent E2E 검증.
-intake -> strategy -> ux -> design_system 까지 돌려 계약 준수, 제약 강제, orchestrator 결합을 확인한다.
-오프라인 모드(결정적). site-build.v4 워크플로(design_system 노드)를 사용한다. 기존 데모/워크플로는 그대로 둔다.
+Design System Agent(재정의) 검증.
+Material 3 tonal + Reference Contract + Traceability + Conflict/Whitelist/WCAG + 게이트.
+오프라인 모드(결정적). orchestrator·다른 에이전트·게이트는 수정하지 않는다.
 """
-import sys, shutil, json
+import sys, json
 from pathlib import Path
 
 BASE = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(BASE))
 sys.path.insert(0, str(BASE / "agents"))
 
-from orchestrator import Store, Orchestrator, canonical_hash
-import strategy as strategy_agent
-import ux as ux_agent
-import design_system as ds_agent
+import design_system as ds
+import gate_test
+import gate_review
 
-ROOT = str(BASE / "_run_design_system")
-PROJECT = 61
-if Path(ROOT).exists():
-    shutil.rmtree(ROOT)
+STRAT = {"positioning": "풋살 소셜매치 예약"}
+UX = {"ux_principles": []}
 
-WF = json.loads((BASE / "workflow" / "site-build.v4.json").read_text(encoding="utf-8"))
 
-PRODUCERS = {
-    "strategy": strategy_agent.make_producer(),
-    "ux": ux_agent.make_producer(),
-    "design_system": ds_agent.make_producer(),
-}
+def produce(references):
+    intake = {"site_character": "풋살 소셜매치 예약", "requirements": ["개인 신청"], "references": references}
+    return ds.produce({"intake": intake, "strategy": STRAT, "ux": UX})
 
-store = Store(ROOT, PROJECT)
-orc = Orchestrator(store, WF, PRODUCERS)
 
-# intake 시드. brand_tokens가 핵심 색/폰트 근거(human). warning/danger는 일부러 미제공 -> open_questions 유도.
-intake_body = {
-    "site_character": "풋살 소셜매치 예약",
-    "requirements": ["개인 신청", "매치 예약", "정산 확인"],
-    "seed_competitors": ["PLAB", "아이엠그라운드"],
-    "unique_angles": ["매니저 배정 자동화", "정산 투명성"],
-    "brand_tokens": {"accent": "#7C3AED", "success": "#16A34A", "font_family": "Inter, sans-serif"},
-}
-ver_pk = store.next_pk()
-head = {"pk": store.next_pk(), "type": "intake", "project_pk": PROJECT,
-        "current_version": 1, "current_version_pk": ver_pk, "status": "confirmed"}
-store.append_version({"pk": ver_pk, "type": "intake", "record_pk": head["pk"], "version": 1,
-                      "body": intake_body, "body_hash": canonical_hash(intake_body),
-                      "derived_from": [], "produced_by_run": None})
-store.save_head(head)
+def oq_has(body, sub):
+    return any(sub in q for q in body["open_questions"])
 
-# 정의 단계 파이프라인: strategy -> (confirm) -> ux -> (confirm) -> design_system
-print("=== tick: strategy ===", orc.tick())
-orc.human_confirm("strategy")
-print("=== tick: ux ===", orc.tick())
-orc.human_confirm("ux")
-print("=== tick: design_system ===", orc.tick())
 
-dh = store.head("design_system")
-dv = store.version("design_system", dh["current_version"])
-b = dv["body"]
+print("=== 1. reference 없음 -> baseline 세트 ===")
+b0 = produce([])
+print("seed:", b0["seed"])
+print("baseline(Material seed + Pretendard + Tabler):",
+      b0["seed"]["source"] == "baseline" and b0["seed"]["font_family"] == "Pretendard" and b0["seed"]["icon_pack"] == "Tabler")
+print("open_questions에 기본 세트 사용 기록:", oq_has(b0, "기본 세트 사용 중"))
+assert b0["seed"]["source"] == "baseline"
+assert oq_has(b0, "기본 세트 사용 중")
 
-print("\n=== 산출된 design_system body (요약) ===")
-print(json.dumps({
-    "color_tokens": b["color_tokens"],
-    "typography": b["typography"],
-    "component_specs": [c["component"] for c in b["component_specs"]],
-    "icon": b["icon"],
-    "accessibility": b["accessibility"],
-    "open_questions": b["open_questions"],
-    "provenance": b["provenance"],
-}, ensure_ascii=False, indent=2))
+print("\n=== 2. token reference -> 표현층만 override, 토대 불변 ===")
+bt = produce([{"reference_id": "REF-001", "type": "token",
+               "value": {"color.primary": "#1E88E5", "font.family": "Roboto"},
+               "source": "brand kit"}])
+print("seed.primary origin:", bt["seed"]["source"], "| font:", bt["seed"]["font_family"])
+prim = next(t for t in bt["tokens"] if t["token_key"] == "color.light.primary")
+fontt = next(t for t in bt["tokens"] if t["token_key"] == "font.family")
+print("color.light.primary origin:", prim["origin"], "source_reference_id:", prim["source_reference_id"])
+print("font.family origin:", fontt["origin"], "source_reference_id:", fontt["source_reference_id"])
+print("컴포넌트 6종 불변:", [c["component"] for c in bt["component"]] == [c["component"] for c in b0["component"]])
+print("터치타겟 44px 불변:", bt["governance"]["accessibility"]["min_touch_target"] == "44x44px")
+print("spacing 체계 불변:", [s["token"] for s in bt["foundation"]["spacing"]] == [s["token"] for s in b0["foundation"]["spacing"]])
+assert prim["origin"] == "reference-token" and prim["source_reference_id"] == "REF-001"
+assert [c["component"] for c in bt["component"]] == [c["component"] for c in b0["component"]]
 
-print("\n=== css_variables_template ===")
-print(b["css_variables_template"])
+print("\n=== 3. 화이트리스트 밖 토큰 변경 시도 -> 무시 + open_questions ===")
+bw = produce([{"reference_id": "REF-002", "type": "token",
+               "value": {"spacing.sp-4": "99px", "color.primary": "#1E88E5"}, "source": "x"}])
+print("whitelist_violations:", bw["reference"]["whitelist_violations"])
+print("open_questions에 'override 범위 밖':", oq_has(bw, "override 범위 밖"))
+sp4 = next(t for t in bw["tokens"] if t["token_key"] == "spacing.sp-4")
+print("spacing.sp-4 값 불변(99px 무시):", sp4["value"], "| origin:", sp4["origin"])
+print("color.primary는 정상 적용:", next(t for t in bw["tokens"] if t["token_key"] == "color.light.primary")["origin"])
+assert "spacing.sp-4" in bw["reference"]["whitelist_violations"]
+assert sp4["value"] == "16px" and sp4["origin"] == "baseline"
 
-print("\n=== 검증 ===")
-# origin 분류 집계
-origins = {}
-for c in b["color_tokens"]:
-    origins[c["origin"]] = origins.get(c["origin"], 0) + 1
-print("color_tokens origin 분포:", origins)
-accent_tok = next((c for c in b["color_tokens"] if c["token"] == "color-accent"), None)
-print("color-accent:", accent_tok["value"], "origin=", accent_tok["origin"], "source=", accent_tok["source"],
-      "(입력 brand_tokens.accent와 일치:", accent_tok["value"] == intake_body["brand_tokens"]["accent"], ")")
-tint_tok = next((c for c in b["color_tokens"] if c["token"] == "color-accent-tint"), None)
-print("color-accent-tint(파생):", tint_tok["value"], "origin=", tint_tok["origin"], "(inference 표기:", tint_tok["origin"] == "inference", ")")
-# 모든 color_token source 보유
-print("모든 color_token source 보유:", all(c.get("source") for c in b["color_tokens"]))
-# 컴포넌트 uses_tokens 무결성
-defined = {c["token"] for c in b["color_tokens"]} | {s["token"] for s in b["spacing"]} | {r["token"] for r in b["radius"]}
-comp_ok = all(all(tk in defined for tk in c["uses_tokens"]) for c in b["component_specs"])
-print("컴포넌트 uses_tokens 모두 정의됨(발명 없음):", comp_ok)
-print("component_specs:", [c["component"] for c in b["component_specs"]])
-print("open_questions(미제공 의미색 등):", b["open_questions"])
-print("design_system head status:", dh["status"], "(in_review = 사람 게이트 대기)")
-print("derived_from(불변 provenance):", dv["derived_from"])
+print("\n=== 4. WCAG 미달 token -> 적용 + 경고 open_questions ===")
+bwc = produce([{"reference_id": "REF-003", "type": "token", "value": {"color.primary": "#EEEEEE"}, "source": "x"}])
+print("wcag_warnings:", bwc["reference"]["wcag_warnings"])
+print("open_questions에 대비 미달 경고:", oq_has(bwc, "대비 미달"))
+assert "color.primary" in bwc["reference"]["wcag_warnings"]
 
-print("\n=== 제약 강제 확인: No-Fabrication (source 없는 color_token) ===")
-try:
-    ds_agent.validate({
-        "color_tokens": [{"token": "color-x", "value": "#000000", "mode": "shared", "origin": "human"}],
-        "typography": {}, "spacing": [], "radius": [], "elevation": [], "component_specs": [],
-        "icon": {}, "accessibility": {}, "css_variables_template": "", "open_questions": [],
-        "provenance": {"color_tokens": "per_token"},
-    })
-    print("FAIL: 통과되면 안 됨")
-except ValueError as e:
-    print("정상 차단:", e)
+print("\n=== 5. image/url -> offline 분석 안 함 + open_questions ===")
+bi = produce([{"reference_id": "REF-004", "type": "image", "value": {"artifact_ref": "a1", "filename": "brand.png", "mime_type": "image/png"}, "source": "upload"},
+              {"reference_id": "REF-005", "type": "url", "value": {"url": "https://x"}, "source": "site"}])
+print("image open_q:", oq_has(bi, "image): offline 분석 불가"))
+print("url open_q:", oq_has(bi, "url): offline 분석 불가"))
+print("seed는 baseline 유지(분석 안 함):", bi["seed"]["source"] == "baseline")
+assert oq_has(bi, "offline 분석 불가") and bi["seed"]["source"] == "baseline"
 
-print("\n=== 제약 강제 확인: 추론 층 분리 (입력 토큰을 inference로 표기) ===")
-try:
-    ds_agent.validate({
-        "color_tokens": [{"token": "color-accent", "value": "#7C3AED", "mode": "shared",
-                          "origin": "inference", "source": "brand_tokens.accent"}],
-        "typography": {}, "spacing": [], "radius": [], "elevation": [], "component_specs": [],
-        "icon": {}, "accessibility": {}, "css_variables_template": "", "open_questions": [],
-        "provenance": {"color_tokens": "per_token"},
-    })
-    print("FAIL: 통과되면 안 됨")
-except ValueError as e:
-    print("정상 차단:", e)
+print("\n=== 6. 토큰 traceability 실측 ===")
+ok_trace = True
+for t in bt["tokens"]:
+    if not t.get("token_key") or "value" not in t or t.get("origin") not in ds.ALLOWED_ORIGINS:
+        ok_trace = False
+    if t["origin"].startswith("reference-") and not t.get("source_reference_id"):
+        ok_trace = False
+    if t["origin"] == "baseline" and t.get("source_reference_id"):
+        ok_trace = False
+n_ref = sum(1 for t in bt["tokens"] if t["origin"] == "reference-token")
+n_base = sum(1 for t in bt["tokens"] if t["origin"] == "baseline")
+print("모든 토큰 token_key/value/origin 보유 + 규칙 일치:", ok_trace)
+print(f"reference-token 토큰: {n_ref}개 / baseline 토큰: {n_base}개 / 총 {len(bt['tokens'])}개")
+assert ok_trace
 
-print("\n=== 제약 강제 확인: 발명된 토큰 참조 (컴포넌트가 미정의 토큰 참조) ===")
-try:
-    ds_agent.validate({
-        "color_tokens": [{"token": "color-accent", "value": "#7C3AED", "mode": "shared",
-                          "origin": "human", "source": "brand_tokens.accent"}],
-        "typography": {}, "spacing": [], "radius": [], "elevation": [],
-        "component_specs": [{"component": "button", "spec": {}, "uses_tokens": ["color-ghost"]}],
-        "icon": {}, "accessibility": {}, "css_variables_template": "", "open_questions": [],
-        "provenance": {"color_tokens": "per_token"},
-    })
-    print("FAIL: 통과되면 안 됨")
-except ValueError as e:
-    print("정상 차단:", e)
+print("\n=== 7. Conflict 우선순위(token>image>url>baseline) ===")
+bc = produce([{"reference_id": "REF-006", "type": "token", "value": {"color.primary": "#1E88E5", "color.secondary": "#00897B"}, "source": "a"},
+              {"reference_id": "REF-007", "type": "token", "value": {"color.primary": "#D81B60"}, "source": "b"}])
+print("conflicts:", bc["reference"]["conflicts"])
+print("color.primary 충돌 -> 임의선택 금지(baseline 유지):",
+      next(t for t in bc["tokens"] if t["token_key"] == "color.light.primary")["origin"])
+print("color.secondary는 충돌 없어 적용(token>baseline):",
+      next(t for t in bc["tokens"] if t["token_key"] == "color.light.secondary")["origin"])
+print("open_questions에 충돌 확인 요청:", oq_has(bc, "reference 충돌"))
+assert "color.primary" in bc["reference"]["conflicts"]
+assert next(t for t in bc["tokens"] if t["token_key"] == "color.light.primary")["origin"] == "baseline"
+assert next(t for t in bc["tokens"] if t["token_key"] == "color.light.secondary")["origin"] == "reference-token"
+
+print("\n=== 8. 게이트(Test/Review) 적용 ===")
+for label, body in [("baseline", b0), ("token", bt)]:
+    t = gate_test.run_test_gate("design_system", body)
+    r = gate_review.run_review_gate("design_system", body)
+    print(f"  {label}: TEST={t['status']} REVIEW={r['status']} (warns={len(t['warnings'])})")
+    assert t["status"] in ("PASS", "WARN")
+    assert r["status"] in ("PASS", "WARN")
+
+print("\n=== Material 3 tonal 확인(Light 진한 / Dark 밝은, surface 5단계) ===")
+print("light.primary:", b0["foundation"]["color"]["light"]["primary"], "| dark.primary:", b0["foundation"]["color"]["dark"]["primary"])
+print("dark.surface(#121212 계열):", b0["foundation"]["color"]["dark"]["surface"])
+print("surface container light 5단계:", list(b0["foundation"]["surface_tones"]["light"].keys()))
+print("의미색 state_mapping:", [(s["state"], s["light"], s["dark"]) for s in b0["semantic"]["state_mapping"]])
+print("\nDONE")
