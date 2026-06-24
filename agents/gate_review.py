@@ -23,6 +23,8 @@ PASS, WARN, FAIL = "PASS", "WARN", "FAIL"
 
 def _validator(record_type):
     """각 에이전트의 실제 계약(validate 함수 또는 Pydantic 모델)을 반환. 발명 금지."""
+    if record_type == "goal_analysis":
+        import goal_analysis; return ("fn", goal_analysis.validate)
     if record_type == "strategy":
         import strategy; return ("fn", strategy.validate)
     if record_type == "ux":
