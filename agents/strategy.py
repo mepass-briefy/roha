@@ -22,16 +22,20 @@ FIXED_AXES = ["기능", "수익모델", "온보딩", "불편지점"]
 
 # real 모드 기본 모델. 필요 시 make_real_llm(model=...)로 교체.
 REAL_MODEL_DEFAULT = "claude-sonnet-4-6"
+# Anthropic server-side web_search 도구 식별자/기본 검색 횟수.
+WEB_SEARCH_TOOL_TYPE = "web_search_20250305"
+WEB_SEARCH_MAX_USES_DEFAULT = 5
 
-# real 모드 추가 지시(이번 단계: web_search 없이 모델 지식만, No-Fabrication 강조).
+# real 모드 추가 지시(web_search 연결: 검색으로 확인된 fact만, 환각 금지).
 REAL_MODE_INSTRUCTION = (
-    "\n\n## real 모드 지시\n"
-    "1. web_search 없이 너의 지식만 사용한다(검색 도구 미연결).\n"
-    "2. No-Fabrication: 근거가 불확실한 경쟁사·수치를 지어내지 않는다. "
-    "실제로 존재한다고 아는 서비스만 competitors에 넣고 source_url(공식 도메인)을 단다. "
-    "불확실하면 competitors를 빈 배열로 두고 market_gaps에 '데이터 없음'을 표기한다.\n"
-    "3. 위 출력 스키마의 JSON만 출력한다. 코드펜스나 설명 텍스트를 넣지 않는다.\n"
-    "4. chosen은 항상 null. unique_angles는 intake가 준 것만 사용한다."
+    "\n\n## real 모드 지시(web_search 연결)\n"
+    "1. web_search 도구로 실제 검색해 경쟁사·사실을 확인한다. 너의 기억만으로 회사를 단정하지 마라.\n"
+    "2. No-Fabrication: 검색 결과에 없는 회사·수치·URL을 생성하지 않는다. competitors는 검색으로 확인된 실제 서비스만 넣고, "
+    "source_url은 검색에서 확인한 공식 도메인을 정확히 기재한다.\n"
+    "3. 검색으로 확인하지 못한 경쟁사·항목은 competitors에 넣지 말고, body의 \"open_questions\" 배열에 사유를 기록한다(검증 필요).\n"
+    "4. provenance 값은 정확히 한 단어만 쓴다(설명 텍스트 금지): competitors·market_gaps=\"fact\", wow_points·options=\"inference\", unique_angles=\"human\".\n"
+    "5. body에 \"open_questions\": [] 필드를 포함한다. chosen은 항상 null. unique_angles는 intake가 준 것만 사용한다.\n"
+    "6. 최종 출력은 출력 스키마의 JSON 객체 하나만. 검색 과정 설명을 텍스트로 출력하지 마라."
 )
 
 
@@ -114,8 +118,15 @@ def offline_llm(system: str, user: str) -> str:
     return json.dumps(body, ensure_ascii=False)
 
 
-def make_real_llm(model=REAL_MODEL_DEFAULT, max_tokens=4096):
-    """real llm(system, user) -> str. Anthropic messages API로 Claude 호출.
+def _extract_json(text: str) -> str:
+    """text 블록 join 결과에서 JSON 객체만 추출(검색 설명 텍스트가 섞여도 안전)."""
+    text = text.replace("```json", "").replace("```", "").strip()
+    i, j = text.find("{"), text.rfind("}")
+    return text[i:j + 1] if i != -1 and j != -1 and j > i else text
+
+
+def make_real_llm(model=REAL_MODEL_DEFAULT, max_tokens=4096, max_searches=WEB_SEARCH_MAX_USES_DEFAULT):
+    """real llm(system, user) -> str. Anthropic messages API + server-side web_search 도구.
     실패(SDK 미설치/키 없음/네트워크/API 에러)는 mock 폴백 없이 RuntimeError로 드러낸다."""
     def real_llm(system: str, user: str) -> str:
         try:
@@ -131,14 +142,16 @@ def make_real_llm(model=REAL_MODEL_DEFAULT, max_tokens=4096):
                 model=model,
                 max_tokens=max_tokens,
                 system=system + REAL_MODE_INSTRUCTION,
+                tools=[{"type": WEB_SEARCH_TOOL_TYPE, "name": "web_search", "max_uses": max_searches}],
                 messages=[{"role": "user", "content": user}],
             )
         except Exception as e:
             raise RuntimeError(f"real 모드 Anthropic API 호출 실패: {type(e).__name__}: {e}") from e
+        # server-side web_search는 단일 create 호출에서 처리된다. 최종 text 블록만 모은다.
         text = "".join(b.text for b in resp.content if getattr(b, "type", None) == "text").strip()
         if not text:
-            raise RuntimeError("real 모드: Anthropic 응답에 텍스트 없음")
-        return text
+            raise RuntimeError("real 모드: Anthropic 응답에 텍스트 없음(검색 후 최종 답변 없음)")
+        return _extract_json(text)
     return real_llm
 
 
