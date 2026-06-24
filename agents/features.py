@@ -45,6 +45,7 @@ REAL_MODE_INSTRUCTION = (
     "경계 규칙: Derived/Operational/Business 판단이 애매하면 더 보수적인 쪽(Business=open_questions)으로. 발명보다 질문.\n"
     "Fabrication 금지: 어느 요구에서도 도출되지 않는 신규 기능은 출력하지 않는다.\n"
     "strategy가 이미 경쟁사를 분석했으므로 경쟁사를 다시 발굴하지 않는다.\n"
+    "category 값은 정확히 다음 중 하나만 쓴다(풀네임·설명 텍스트 금지): \"Explicit\", \"Derived\", \"Operational\", \"Competitive\".\n"
     "provenance.features=\"per_item\". 각 기능에 category·origin·source를 표기한다. 출력은 features body JSON만(코드펜스/설명 금지)."
 )
 

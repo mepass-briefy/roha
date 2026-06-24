@@ -65,16 +65,26 @@ class PgStore:
 
     def _ensure_workflow(self, workflow):
         wf = workflow or {"workflow_key": "default", "version": 1, "status": "active", "nodes": []}
+        key = wf.get("workflow_key", "default")
+        ver = wf.get("version", 1)
+        status = wf.get("status", "active")
         with self.conn.cursor() as cur:
+            # 한 workflow_key당 active는 하나(uq_workflows_one_active). 새 버전을 active로 올릴 때
+            # 같은 key의 다른 active 버전을 deprecated로 내린다(버전 관리).
+            if status == "active":
+                cur.execute(
+                    "UPDATE workflows SET status = 'deprecated' "
+                    "WHERE workflow_key = %s AND version <> %s AND status = 'active'",
+                    (key, ver),
+                )
             cur.execute(
                 "INSERT INTO workflows (pk, workflow_key, version, status, nodes) "
                 f"VALUES (nextval('{_PK_SEQ}'), %s, %s, %s, %s) "
-                "ON CONFLICT (workflow_key, version) DO UPDATE SET status = EXCLUDED.status "
-                "RETURNING pk",
-                (wf.get("workflow_key", "default"), wf.get("version", 1),
-                 wf.get("status", "active"), Jsonb(wf.get("nodes", []))),
+                "ON CONFLICT (workflow_key, version) DO UPDATE SET "
+                "status = EXCLUDED.status, nodes = EXCLUDED.nodes RETURNING pk",
+                (key, ver, status, Jsonb(wf.get("nodes", []))),
             )
-            self._workflow_ver = wf.get("version", 1)
+            self._workflow_ver = ver
             return cur.fetchone()[0]
 
     def _ensure_project(self):
