@@ -35,6 +35,8 @@ intake_body = {
     "site_character": "풋살 소셜매치 예약",
     "goal": {"statement": "동네 풋살 모임을 활성화하고 싶다", "details": {}},
     "requirements": ["예약되면 좋겠고", "평일에 사람 모으고 싶다"],
+    "context": "기존 풋살장 운영 업체. 주말은 차는데 평일이 빔.",
+    "target_platform": "both",
 }
 ver_pk = store.next_pk()
 head_pk = store.next_pk()
@@ -59,7 +61,22 @@ print("\n=== requirement_normalization ===")
 for r in b["requirement_normalization"]:
     print(f"  {r.get('id')} [{r.get('origin')}] {r.get('statement')}")
 print("\nopen_questions:", b["open_questions"])
+print("target_platform(저장된 입력값):", b["target_platform"], "| provenance:", b["provenance"].get("target_platform"))
 print("provenance:", b["provenance"])
+
+# target_platform이 intake record에 저장됐는지(C7)
+intake_saved = store.version("intake", store.head("intake")["current_version"])["body"]
+print("intake record에 target_platform 저장:", intake_saved.get("target_platform"))
+print("intake record에 context 저장:", bool(intake_saved.get("context")))
+
+print("\n=== [케이스2] Context 없음 -> '고객이 누구인지' open_question ===")
+no_ctx_intake = {"goal": {"statement": "동네 풋살 모임을 활성화하고 싶다"}, "requirements": ["예약되면 좋겠고"]}
+b2 = discovery_agent.produce({"intake": no_ctx_intake}, llm=D_LLM)
+ctx_oq = [q for q in b2["open_questions"] if "누구" in q or "context" in q.lower()]
+print("context 미제공 open_question:", ctx_oq[:2])
+print("target_platform(미지정->기본):", b2["target_platform"])
+tp_oq = [q for q in b2["open_questions"] if "target_platform" in q]
+print("target_platform 미지정 open_question:", tp_oq[:1])
 
 print("\n=== No-Fabrication·경계 검증 ===")
 print("goal_interpretation provenance=inference:", b["provenance"].get("goal_interpretation") == "inference")

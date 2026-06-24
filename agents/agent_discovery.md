@@ -12,8 +12,10 @@ Discovery는 고객 언어를 시스템 언어로 번역한다. 좋은 아이디
 
 ## 입출력 계약 (orchestrator producer 시그니처 준수)
 
-1. 입력: `inputs["intake"]` body. `{ goal: { statement(필수), details(선택) }, requirements[], ... }`.
-2. 출력: discovery body(JSON). 아래 스키마.
+1. 입력: `inputs["intake"]` body. `{ goal: { statement(필수), details(선택) }, requirements[], context(선택·권장), target_platform(명시: web|mobile|both), ... }`.
+   - context: 고객·프로덕트 맥락(자유 서술). who(고객이 누구)·기존 상황. 없으면 "고객이 누구인지"를 open_question으로.
+   - target_platform: 입력값(fact, 추론 아님). 로빈이 고객과 협의해 확정. 없으면 "미정".
+2. 출력: discovery body(JSON). 아래 스키마. target_platform은 입력값을 그대로 싣는다(provenance=fact).
 3. 버전·derived_from·status·provenance 저장은 orchestrator 책임. 본 에이전트는 body만 반환한다.
 
 ## 출력 스키마
@@ -29,7 +31,8 @@ Discovery는 고객 언어를 시스템 언어로 번역한다. 좋은 아이디
     {"id": "R-01", "statement": "...", "origin": "explicit|context-inferred"}
   ],
   "open_questions": ["..."],
-  "provenance": {"goal_interpretation": "inference", "requirement_normalization": "per_item"}
+  "target_platform": "web|mobile|both|미정",
+  "provenance": {"goal_interpretation": "inference", "requirement_normalization": "per_item", "target_platform": "fact"}
 }
 ```
 

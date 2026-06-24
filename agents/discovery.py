@@ -42,13 +42,25 @@ REAL_MODE_INSTRUCTION = (
     "3. 사업 판단 금지(채택·우선순위는 open_questions).\n"
     "4. 애매하면 requirement 항목으로 만들지 말고 open_questions로.\n"
     "C. open_questions: 목표·요구 양쪽의 불확실성.\n"
+    "D. Context 활용: intake.context(고객·프로덕트 맥락)가 있으면 Goal과 함께 해석한다. Context에서 끌어낸 것은 inference로 표기하고(단정 금지), "
+    "Context 기반으로 정리한 요구는 origin=\"context-inferred\"로 둔다(고객이 직접 말한 explicit과 구분). "
+    "Context를 근거로도 새 기능을 발명하지 않는다(맥락 추론은 '이 요구가 이 맥락에서 이렇게 해석된다'까지지, 새 요구 생성이 아니다). Context 없으면 '고객이 누구인지'를 open_question으로.\n"
+    "E. target_platform: 입력값(fact)이다. 추론하지 말고 body.target_platform에 받은 값(web|mobile|both)을 그대로 싣는다. 없으면 \"미정\". provenance.target_platform=\"fact\".\n"
     "성공 기준은 좋은 아이디어가 아니라 왜곡 없는 이해. 원문 근거 없는 항목 출력 금지. 검색 안 함. 출력은 body JSON만(코드펜스/설명 금지)."
 )
 
 
+TARGET_PLATFORMS = ("web", "mobile", "both", "미정")
+
+
 def build_user_prompt(intake: dict) -> str:
-    return json.dumps({"goal": (intake or {}).get("goal", {}), "requirements": (intake or {}).get("requirements", [])},
-                      ensure_ascii=False)
+    intake = intake or {}
+    return json.dumps({
+        "goal": intake.get("goal", {}),
+        "requirements": intake.get("requirements", []),
+        "context": intake.get("context"),
+        "target_platform": intake.get("target_platform"),
+    }, ensure_ascii=False)
 
 
 def _extract_json(text: str) -> str:
@@ -59,12 +71,19 @@ def _extract_json(text: str) -> str:
 
 def validate(body: dict) -> dict:
     """합의된 제약을 코드로 강제한다. 위반 시 raise."""
-    required = {"goal_interpretation", "requirement_normalization", "open_questions", "provenance"}
+    required = {"goal_interpretation", "requirement_normalization", "open_questions", "provenance", "target_platform"}
     missing = required - set(body)
     if missing:
         raise ValueError(f"discovery body 필드 누락: {missing}")
 
     prov = body["provenance"]
+
+    # target_platform: 입력값(fact, 추론 아님). web|mobile|both|미정.
+    tp = body.get("target_platform")
+    if tp not in TARGET_PLATFORMS:
+        raise ValueError(f"target_platform은 {TARGET_PLATFORMS} 중 하나여야 함(입력값, 현재 '{tp}')")
+    if prov.get("target_platform") != "fact":
+        raise ValueError("provenance.target_platform은 fact여야 함(입력값, 추론 아님)")
     gi = body["goal_interpretation"]
     if not isinstance(gi, dict):
         raise ValueError("goal_interpretation은 객체여야 함")
@@ -102,6 +121,8 @@ def offline_llm(system: str, user: str) -> str:
     statement = (goal.get("statement") or "").strip()
     details = goal.get("details") or {}
     requirements = payload.get("requirements", []) or []
+    context = (payload.get("context") or "").strip()
+    target_platform = payload.get("target_platform") or "미정"
 
     if statement:
         inferred_dimensions = [
@@ -121,13 +142,24 @@ def offline_llm(system: str, user: str) -> str:
         inferred_dimensions, candidate_metrics, assumptions = [], [], []
         open_questions = ["Goal.statement 없음: 목표 해석 불가. 고객 언어의 목표 서술 필요."]
 
+    # Context 활용: 있으면 맥락을 가정(inference)으로 반영, 없으면 '고객이 누구인지' open_question.
+    if context:
+        assumptions.append({"assumption": f"맥락 반영(단정 아님): {context}", "basis": "intake.context"})
+    else:
+        open_questions.append("고객이 누구인지(intake.context) 미제공: 해석 불확실. context 권장.")
+
     # requirement_normalization: 고객이 준 requirements만 정리(새 요구 생성 금지). 전부 explicit.
+    # (mock은 context 기반 context-inferred 요구를 만들지 않는다. 새 요구 발명 금지 — real이 맥락 해석.)
     requirement_normalization = [
         {"id": f"R-{i + 1:02d}", "statement": req, "origin": "explicit"}
         for i, req in enumerate(requirements)
     ]
     if not requirements:
         open_questions.append("요구사항 미제공: 정규화할 요구 없음.")
+
+    # target_platform: 입력값(fact). 미지정이면 '미정'으로 저장 + open_question.
+    if not payload.get("target_platform"):
+        open_questions.append("target_platform 미지정: 기본 '미정'으로 저장(web|mobile|both 협의 필요).")
 
     body = {
         "goal_interpretation": {
@@ -137,7 +169,9 @@ def offline_llm(system: str, user: str) -> str:
         },
         "requirement_normalization": requirement_normalization,
         "open_questions": open_questions,
-        "provenance": {"goal_interpretation": "inference", "requirement_normalization": "per_item"},
+        "target_platform": target_platform,
+        "provenance": {"goal_interpretation": "inference", "requirement_normalization": "per_item",
+                       "target_platform": "fact"},
     }
     return json.dumps(body, ensure_ascii=False)
 
