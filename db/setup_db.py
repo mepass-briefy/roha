@@ -37,12 +37,17 @@ def main():
         return 2
 
     schema_sql = (Path(__file__).with_name("schema.sql")).read_text(encoding="utf-8")
+    role_path = Path(__file__).with_name("create_app_role.sql")
+    role_sql = role_path.read_text(encoding="utf-8") if role_path.exists() else None
 
     try:
         with psycopg.connect(url, autocommit=True) as conn:
             with conn.cursor() as cur:
                 # DDL 적용(idempotent)
                 cur.execute(schema_sql)
+                # 운영용 non-bypassrls role 생성(idempotent)
+                if role_sql:
+                    cur.execute(role_sql)
                 # 검증: public 스키마의 기대 테이블 존재 확인
                 cur.execute(
                     "SELECT table_name FROM information_schema.tables "

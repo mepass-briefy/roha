@@ -35,8 +35,10 @@ if MODE == "db":
     with psycopg.connect(os.environ["DATABASE_URL"], autocommit=True) as _c:
         with _c.cursor() as _cur:
             _cur.execute("SELECT set_config('app.current_project', %s, false)", (str(PROJECT),))
-            for _t in ("record_validations", "record_versions", "runs", "events", "records"):
+            for _t in ("record_validations", "artifacts", "record_versions", "runs", "events", "records"):
                 _cur.execute(f"DELETE FROM {_t} WHERE project_pk = %s", (PROJECT,))
+            # projects도 초기화해 _ensure_project가 최신 메타(public_key 포함)로 재생성하게 한다.
+            _cur.execute("DELETE FROM projects WHERE pk = %s", (PROJECT,))
     store = PgStore(PROJECT, workflow=WF)
 else:
     import shutil
@@ -69,6 +71,18 @@ print("strategy head status:", sh["status"], "version:", sh["current_version"])
 print("strategy competitors 수:", len(sv["body"]["competitors"]))
 print("events 수:", len(store.events()))
 
+# artifacts 적재 검증용: backend 산출 형태(body.artifact_refs)를 한 record_version으로 저장.
+# PgStore가 artifact 메타를 artifacts 테이블에 적재한다(에이전트/orchestrator 무수정).
+art_v = store.next_pk()
+art_h = store.next_pk()
+store.append_version({"pk": art_v, "type": "backend", "record_pk": art_h, "version": 1,
+                      "body": {"api_spec": {}, "artifact_refs": [
+                          {"path": "routes/ep-applications-list.py", "kind": "route_stub", "checksum": "sha-aaa111", "bytes": 305},
+                          {"path": "routes/ep-applications-create.py", "kind": "route_stub", "checksum": "sha-bbb222", "bytes": 311}]},
+                      "body_hash": "bk-hash-1", "derived_from": [], "produced_by_run": None})
+store.save_head({"pk": art_h, "type": "backend", "project_pk": PROJECT,
+                 "current_version": 1, "current_version_pk": art_v, "status": "in_review"})
+
 if MODE == "db":
     print("\n=== Neon 직접 SELECT 검증 ===")
     import psycopg
@@ -88,16 +102,23 @@ if MODE == "db":
                         "WHERE rv.project_pk=%s AND r.type='strategy'", (PROJECT,))
             print("strategy provenance.competitors:", cur.fetchone())
 
+            print("\n=== 남은 3개 테이블 적재 검증 ===")
+            cur.execute("SELECT type, mime, uri, checksum, size_bytes FROM artifacts WHERE project_pk=%s ORDER BY uri", (PROJECT,))
+            print("artifacts:", cur.fetchall())
+            cur.execute("SELECT business_key, (public_key IS NOT NULL) AS has_pubkey, length(public_key) FROM projects WHERE pk=%s", (PROJECT,))
+            print("projects (business_key, public_key 존재, 길이):", cur.fetchone())
+            cur.execute("SELECT workflow_key, version, jsonb_array_length(nodes) FROM workflows WHERE pk=%s", (store.workflow_pk,))
+            print("workflows (key, version, node 수):", cur.fetchone())
+            cur.execute("SELECT node_id, output_record_pk, output_version FROM runs WHERE project_pk=%s ORDER BY pk", (PROJECT,))
+            print("runs (node_id, output_record_pk, output_version):", cur.fetchall())
+
             print("\n=== RLS 점검: 테넌트 격리(non-bypassrls role 기준) ===")
             cur.execute("SELECT rolbypassrls FROM pg_roles WHERE rolname=current_user")
             print("현재 연결 role의 BYPASSRLS:", cur.fetchone()[0],
                   "(True면 owner 연결은 RLS 우회 -> 격리는 non-bypassrls role에서 강제)")
-            # bypassrls 없는 role로 전환해 실제 격리를 확인한다.
-            cur.execute("DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='rls_check') "
-                        "THEN CREATE ROLE rls_check NOLOGIN; END IF; END $$;")
-            cur.execute("GRANT SELECT ON records TO rls_check")
-            cur.execute("GRANT rls_check TO CURRENT_USER")  # owner가 SET ROLE 하려면 멤버여야
-            cur.execute("SET ROLE rls_check")
+            # 운영용 non-bypassrls role(harness_app, create_app_role.sql로 생성)로 전환해 실제 격리 확인.
+            cur.execute("GRANT harness_app TO CURRENT_USER")  # owner가 SET ROLE 하려면 멤버여야
+            cur.execute("SET ROLE harness_app")
             cur.execute("SELECT set_config('app.current_project', '8888', false)")
             cur.execute("SELECT count(*) FROM records WHERE project_pk=%s", (PROJECT,))
             other_ctx = cur.fetchone()[0]

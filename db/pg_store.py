@@ -13,6 +13,8 @@ projects·workflows는 FK를 위해 최소 row만 생성. artifacts는 범위 �
 import os
 import json
 import time
+import string
+import secrets
 import hashlib
 from pathlib import Path
 
@@ -23,6 +25,20 @@ from dotenv import load_dotenv
 load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
 _PK_SEQ = "harness_pk_seq"
+_PUBKEY_ALPHABET = string.ascii_letters + string.digits
+
+
+def _gen_public_key(n=12):
+    """외부 노출용 public_key(난수, 불변). 식별자 3종 중 외부용."""
+    return "".join(secrets.choice(_PUBKEY_ALPHABET) for _ in range(n))
+
+
+def _mime_for(path: str) -> str:
+    if path.endswith(".py"):
+        return "text/x-python"
+    if path.endswith((".jsx", ".js", ".tsx", ".ts")):
+        return "text/javascript"
+    return "application/octet-stream"
 
 
 class PgStore:
@@ -62,12 +78,14 @@ class PgStore:
             return cur.fetchone()[0]
 
     def _ensure_project(self):
+        # 식별자 3종: PK(내부), business_key(운영/검색), public_key(외부 노출, 난수·불변).
+        # ON CONFLICT (pk) DO NOTHING -> 최초 1회만 생성, public_key는 이후 불변.
         with self.conn.cursor() as cur:
             cur.execute(
-                "INSERT INTO projects (pk, business_key, name, workflow_pk, workflow_ver) "
-                "VALUES (%s, %s, %s, %s, %s) ON CONFLICT (pk) DO NOTHING",
-                (self.project_pk, f"PROJ-{self.project_pk}", f"project {self.project_pk}",
-                 self.workflow_pk, self._workflow_ver),
+                "INSERT INTO projects (pk, business_key, public_key, name, workflow_pk, workflow_ver) "
+                "VALUES (%s, %s, %s, %s, %s, %s) ON CONFLICT (pk) DO NOTHING",
+                (self.project_pk, f"PROJ-{self.project_pk}", _gen_public_key(),
+                 f"project {self.project_pk}", self.workflow_pk, self._workflow_ver),
             )
 
     # ---- next_pk (DB 시퀀스) ----
@@ -136,14 +154,38 @@ class PgStore:
             try:
                 cur.execute(
                     "INSERT INTO record_versions (pk, record_pk, project_pk, version, body, body_hash, "
-                    "derived_from, provenance, produced_by_run) "
-                    "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
+                    "derived_from, provenance, artifact_refs, produced_by_run) "
+                    "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
                     (ver["pk"], ver["record_pk"], self.project_pk, ver["version"],
                      Jsonb(body), ver["body_hash"], Jsonb(ver.get("derived_from", [])),
-                     Jsonb(provenance or {}), ver.get("produced_by_run")),
+                     Jsonb(provenance or {}),
+                     Jsonb(body.get("artifact_refs", []) if isinstance(body, dict) else []),
+                     ver.get("produced_by_run")),
                 )
             except psycopg.errors.UniqueViolation as e:
                 raise RuntimeError("immutable violation: version already exists") from e
+
+            # artifacts 적재: body.artifact_refs(backend/frontend/mobile이 채움)를 artifacts 테이블에.
+            # 실제 바이너리가 아니라 경로·메타 중심(현재 구조 유지). 중복 checksum은 무시.
+            run_pk = ver.get("produced_by_run")
+            for a in (body.get("artifact_refs", []) if isinstance(body, dict) else []):
+                path = a.get("path", "")
+                cur.execute(
+                    "INSERT INTO artifacts (pk, project_pk, public_key, type, mime, uri, checksum, "
+                    "size_bytes, produced_by_run) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) "
+                    "ON CONFLICT (project_pk, checksum) DO NOTHING",
+                    (self.next_pk(), self.project_pk, _gen_public_key(), a.get("kind", "artifact"),
+                     _mime_for(path), path, a.get("checksum", ""), a.get("bytes", 0), run_pk),
+                )
+
+            # runs 컬럼 보정: orchestrator가 가진 정보(record_pk, version)로 output_record_pk/version 채움.
+            # model_id/tokens/cost 등은 producer가 안 실어줌 -> BACKLOG B1.
+            if run_pk:
+                cur.execute(
+                    "UPDATE runs SET output_record_pk = %s, output_version = %s "
+                    "WHERE pk = %s AND project_pk = %s",
+                    (ver["record_pk"], ver["version"], run_pk, self.project_pk),
+                )
 
     # ---- validations ----
     def validations(self):
