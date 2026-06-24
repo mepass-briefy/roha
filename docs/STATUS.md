@@ -50,17 +50,36 @@ design_system 재정의(a9cf47a)로 산출 구조가 바뀌었다(color_tokens/c
 2. 미해소다. frontend·mobile이 새 design_system 구조(tokens/foundation)를 읽도록 갱신·재실행해야 해소된다.
 3. 게이트 demo(demo_gate)는 이 stale을 반영해, frontend가 빈 산출이면 frontend 위반 주입을 스킵하도록 가드돼 있다.
 
-## 3. 현재 전부 offline Mock
+## 3. real 모드 전환 현황
 
-모든 에이전트는 모델 호출을 `llm(...) -> str` 인터페이스로 분리해 두었고, 현재 데모는 전부 offline 결정적 Mock으로 동작한다. 외부 web 호출이 없고 산출은 재현 가능(canonical 동일)하다. 교체 지점은 각 에이전트 make_producer(llm=real_llm)이며 구조 변경 없이 클로저 주입으로 처리된다.
+모든 에이전트는 모델 호출을 `llm(...) -> str` 인터페이스로 분리해 두었고, 교체 지점은 각 에이전트 make_producer(llm=...)이며 구조 변경 없이 클로저 주입으로 처리된다.
 
-real 모드 전환 시 채워질 부분
+### 3.1 strategy: real LLM + web_search 완료 (커밋 ba3b8c8)
 
-1. strategy: 경쟁사 리서치(web_search)로 competitors.axes·market_gaps를 실데이터로 채움. 현재는 seed_competitors만, placeholder는 provenance=inference로 정직 표기.
-2. features: 핵심 기능에서 세부 기능으로 펼침(현재는 ux 태스크 1:1 + 와우포인트 보완).
-3. design_system: 도메인 시드 도출(strategy.positioning 도메인 식별 -> 한국 상위 서비스 주색 web_search 분석). 현재는 reference token 즉시 적용 + Material baseline fallback, image/url은 open_questions.
+1. real_llm이 Anthropic messages API + server-side web_search 도구로 동작한다(mock 모드는 그대로 유지, STRATEGY_MODE 또는 make_producer(llm)로 선택).
+2. 실측: 검색 결과 기반으로 경쟁사가 실제로 정확하다(플랩풋볼 plabfootball.com / 아이엠그라운드 iamground.kr / 어반풋볼). 검색 없을 때의 환각(PLAB을 의류로 오인 등)이 해소됐다.
+3. provenance.competitors=fact + source_url 보유 -> validate 통과(real demo exit 0). 검색으로 확인 못 한 항목은 open_questions로 분리.
+4. BACKLOG B6의 strategy 해당분은 해소됐다. 다른 에이전트로의 web_search 확장은 B6에 남는다.
 
-## 4. BACKLOG 현황 (B1~B5)
+### 3.2 나머지 8개 에이전트: 여전히 offline Mock
+
+ux, security, design_system, features, wireframe, backend, frontend, mobile은 아직 offline 결정적 Mock이다(외부 web 호출 없음, 산출 재현 가능). real 전환 대기 상태다. real 전환 시 채워질 부분
+
+1. features: 핵심 기능에서 세부 기능으로 펼침(현재는 ux 태스크 1:1 + 와우포인트 보완).
+2. design_system: 도메인 시드 도출(strategy.positioning 도메인 식별 -> 한국 상위 서비스 주색 web_search 분석). 현재는 reference token 즉시 적용 + Material baseline fallback, image/url은 open_questions.
+3. backend: POST 요청 본문 필드 등 도메인 스키마(현재 open_questions).
+
+### 3.3 검증된 real 전환 패턴 (다른 에이전트 전환 시 적용)
+
+strategy에서 검증된 패턴이다. 다른 에이전트 real 전환 시 이 형태를 따른다.
+
+1. real_llm = Anthropic messages API 호출(키는 ANTHROPIC_API_KEY 환경변수, 코드에 박지 않음). 실패는 mock 폴백 없이 RuntimeError로 드러냄.
+2. server-side web_search 도구 연결(type "web_search_20250305", max_uses 제한).
+3. real 모드 지시: "검색 결과에 없는 회사·수치·URL은 생성 금지(No-Fabrication), 확인 못 한 항목은 open_questions에 기록".
+4. provenance 값은 정확히 한 단어("fact"/"inference"/"human"). 설명 텍스트를 붙이지 않는다(validate가 정확 일치를 요구).
+5. fact 항목(경쟁사·수치)은 검색 출처(URL)를 둔다. mock 모드는 그대로 유지(make_producer(llm=...)로 선택).
+
+## 4. BACKLOG 현황 (B1~B6)
 
 | 번호 | 내용 요약 | 성격 |
 |---|---|---|
@@ -69,6 +88,7 @@ real 모드 전환 시 채워질 부분
 | B3 | 외부 공개(exposure=public) endpoint의 인증·rate limit. 현재 endpoint는 전부 internal | 정책·구조 변경 |
 | B4 | 게이트 결과의 orchestrator 훅 연결 + FAIL 시 되돌림(Performance Outcomes) | 구조·정책 변경 |
 | B5 | Review Gate의 파이프라인 교차(전파) 검사. 상위 open_question 하위 전파 여부, Silent Omission 탐지, 전파 누락 시 FAIL. 게이트가 다중 record를 받는 구조 확장 | 구조 확장 |
+| B6 | real 모드 web_search 도구 연결. strategy 해당분 해소(커밋 ba3b8c8). 나머지 에이전트(특히 design_system 도메인 시드, features 펼침)로의 확장은 남음 | real 전환 |
 
 추가 보류: design_system real 모드 도메인 시드 도출과 image/url 분석(B 트랙·real LLM 선행).
 
