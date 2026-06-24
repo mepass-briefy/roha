@@ -252,6 +252,14 @@ goal_analysis -> discovery 확장·개명 완료(855124c, a030ecf). 역할 = 고
 2. 게이트(human gate) 승인은 로컬에서 한다. UI는 진행 상태·산출 조회 중심.
 3. API는 harness_app(non-bypassrls) role로 DB에 연결해 RLS 격리를 강제한다.
 
+### 화면 우선 옵션 (유력)
+
+기술 명세·구축 루프보다 먼저, 조회·실행 화면을 올려 "도는 ROHA"를 눈으로 확인하는 경로가 유력하다.
+
+1. 1단계(먼저): Workbench 조회·실행 화면 — 입력 -> Discovery 검토 -> 실행 -> 산출물 보기. 기존 API 5종(projects/run/status/records/approve)에 연결. 다 로컬.
+2. 2단계(나중): 편집 화면(기능 정렬 등 산출물 수정)은 Working Layer(4g) 결정 후.
+3. 프로토타입 5화면(4f)이 명세다. 1단계는 그중 조회·실행 흐름(입력/Discovery검토/실행·진행/산출물뷰)만 먼저 구현하고, 전략·기능정렬의 편집은 2단계로 미룬다.
+
 ### 후속 잔여(플랜과 별개)
 
 1. 로컬 real LLM 전환: strategy 외 에이전트로 real_llm 확장(B6), BACKLOG B1 실행 메타 경로.
