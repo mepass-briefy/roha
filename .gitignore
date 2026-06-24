@@ -18,3 +18,6 @@ _run_harness/
 _run_server/
 _run_goal/
 _run_discovery/
+node_modules/
+web/node_modules/
+web/dist/

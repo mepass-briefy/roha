@@ -31,10 +31,15 @@ from pg_store import PgStore
 import gate_test
 import gate_review
 import run_harness  # build_producers 재사용(호출만)
+import discovery as discovery_agent
 
-WF = json.loads((BASE / "workflow" / "site-build.v8.json").read_text(encoding="utf-8"))
+# v11: discovery 노드 포함(intake -> discovery -> strategy -> ...)
+WF = json.loads((BASE / "workflow" / "site-build.v11.json").read_text(encoding="utf-8"))
 ART = BASE / "_run_server" / "artifacts"
 PRODUCERS = run_harness.build_producers(ART)
+# discovery producer 추가(run_harness.build_producers엔 없음). 로직 무수정, 등록만. DISCOVERY_MODE 따름.
+_disc_llm = discovery_agent.real_llm if os.environ.get("DISCOVERY_MODE") == "real" else discovery_agent.offline_llm
+PRODUCERS["discovery"] = discovery_agent.make_producer(_disc_llm)
 GATES = {n["produces"]: n.get("gate") for n in WF["nodes"]}
 NODE_ORDER = [n["produces"] for n in WF["nodes"]]
 
@@ -71,8 +76,11 @@ def _awaiting(store):
 
 # ---- 모델 ----
 class CreateReq(BaseModel):
-    site_character: str
-    requirements: list[str]
+    site_character: str = ""
+    requirements: list[str] = []
+    goal: dict = {}                       # { statement, details } — discovery 입력
+    context: str | None = None            # 고객·프로덕트 맥락(선택)
+    target_platform: str = "미정"         # web|mobile|both|미정 (입력값, fact)
     seed_competitors: list[str] = []
     unique_angles: list[str] = []
     brand_tokens: dict = {}
