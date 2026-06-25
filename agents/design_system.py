@@ -116,6 +116,20 @@ def _best_on(color):
     return "#FFFFFF" if _contrast("#FFFFFF", color) >= _contrast("#000000", color) else "#000000"
 
 
+def _tone_meeting_contrast(seed_hex, start_tone, bg_hex, step):
+    """WCAG AA(4.5:1) 보장. start_tone에서 step(±1)으로 한 단계씩 이동하며 bg 대비 >= WCAG_AA가 되는 첫 tone을 찾는다.
+    경계(0~100)에 닿으면 그 tone을 반환. _tone·_contrast만 사용(새 알고리즘 없음). (value, tone) 반환."""
+    t = start_tone
+    val = _tone(seed_hex, t)
+    while _contrast(val, bg_hex) < WCAG_AA:
+        nt = t + step
+        if nt < 0 or nt > 100:
+            break
+        t = nt
+        val = _tone(seed_hex, t)
+    return val, t
+
+
 # ---------------- B: seed 도출 ----------------
 def derive_seed(strategy, intake, references):
     """seed·폰트·아이콘·origin을 결정하는 단일 진입점. offline: token 즉시 적용, image/url은 보류."""
@@ -233,22 +247,28 @@ def _build_body(intake, strategy, ux):
     color["dark"]["on-surface"] = push("color.dark.on-surface", _tone(NEUTRAL_SEED, 90, neutral=True))
     color["dark"]["outline"] = push("color.dark.outline", _tone(NEUTRAL_SEED, 60, neutral=True))
 
-    # 의미색 4-토큰 패밀리(success/warning/danger): primary와 완전히 동일한 톤 패턴/엔진 재사용.
-    # hue 고정(SEM_SEEDS, brand 무관). base 토큰 color.{mode}.{name}은 아래 state_mapping이 이미 push하므로
-    # 여기서는 dict에 값만 노출하고(중복 token_key 방지), on-/container/on-container 3종만 추가 push.
+    # 의미색 4-토큰 패밀리(success/warning/danger). hue 고정(SEM_SEEDS, brand 무관).
+    # 원칙은 'tone 고정'이 아니라 'WCAG AA(4.5:1) 보장'(design_system 재정의 명시). 따라서 main tone은 고정값이 아니라
+    # surface 대비 AA를 넘을 때까지 한 단계씩 조정(light=40에서 낮춤, dark=80에서 높임; _tone·_contrast 재사용).
+    # on-*은 _best_on으로 main/container 대비 보장. base 토큰 color.{mode}.{name}은 state_mapping이 동일 값으로 push(중복 방지).
+    sem_tone = {}  # 보고용: 조정된 main tone
     for name in SEMANTIC_FAMILY:
         sd = SEM_SEEDS[name]
-        # base: state_mapping과 동일 값(_tone 40/80). 토큰은 state_mapping이 push → 여기선 dict 노출만.
-        color["light"][name] = _tone(sd, 40)
-        color["dark"][name] = _tone(sd, 80)
-        # 추가 토큰(신규 key) — primary와 동일 톤(light 100/90/10, dark 20/30/90)
-        color["light"][f"on-{name}"] = push(f"color.light.on-{name}", _tone(sd, 100))
-        color["light"][f"{name}-container"] = push(f"color.light.{name}-container", _tone(sd, 90))
-        color["light"][f"on-{name}-container"] = push(f"color.light.on-{name}-container", _tone(sd, 10))
-        color["dark"][f"on-{name}"] = push(f"color.dark.on-{name}", _tone(sd, 20))
-        color["dark"][f"{name}-container"] = push(f"color.dark.{name}-container", _tone(sd, 30))
-        color["dark"][f"on-{name}-container"] = push(f"color.dark.on-{name}-container", _tone(sd, 90))
-        # WCAG AA: on-name이 name 위에서, name이 surface 위에서 대비 충족(기존 _contrast 재사용). 미달은 open_questions.
+        l_main, l_t = _tone_meeting_contrast(sd, 40, color["light"]["surface"], -1)
+        d_main, d_t = _tone_meeting_contrast(sd, 80, color["dark"]["surface"], +1)
+        sem_tone[name] = {"light": l_t, "dark": d_t}
+        # main: dict 노출만(토큰 push는 state_mapping이 동일 값으로 수행)
+        color["light"][name] = l_main
+        color["dark"][name] = d_main
+        # container(light 90 / dark 30) + on-* 대비 보장(_best_on)
+        l_cont, d_cont = _tone(sd, 90), _tone(sd, 30)
+        color["light"][f"on-{name}"] = push(f"color.light.on-{name}", _best_on(l_main))
+        color["light"][f"{name}-container"] = push(f"color.light.{name}-container", l_cont)
+        color["light"][f"on-{name}-container"] = push(f"color.light.on-{name}-container", _best_on(l_cont))
+        color["dark"][f"on-{name}"] = push(f"color.dark.on-{name}", _best_on(d_main))
+        color["dark"][f"{name}-container"] = push(f"color.dark.{name}-container", d_cont)
+        color["dark"][f"on-{name}-container"] = push(f"color.dark.on-{name}-container", _best_on(d_cont))
+        # 잔여 미달만 open_questions(조정 후 정상이면 추가 없음 = 경고 해소)
         for mode in ("light", "dark"):
             if _contrast(color[mode][f"on-{name}"], color[mode][name]) < WCAG_AA:
                 open_questions.append(f"의미색 대비 미달: {mode} on-{name}/{name} (WCAG AA 4.5:1 미달) -> 확인 필요")
@@ -270,8 +290,9 @@ def _build_body(intake, strategy, ux):
         sval = applied.get(bk, (sseed, None))[0]
         if bk in applied and _contrast(sval, "#FFFFFF") < WCAG_AA:
             open_questions.append(f"제공된 의미색 '{bk}'={sval} 대비 미달(WCAG AA, 흰 배경 기준) -> 적용하되 확인 필요")
-        light_v = push(f"color.light.{state}", _tone(sval, 40), bk)
-        dark_v = push(f"color.dark.{state}", _tone(sval, 80), bk)
+        # WCAG AA 보장: foundation 의미색 패밀리와 동일하게 surface 대비 통과 tone으로 조정(없으면 그대로).
+        light_v = push(f"color.light.{state}", _tone_meeting_contrast(sval, 40, color["light"]["surface"], -1)[0], bk)
+        dark_v = push(f"color.dark.{state}", _tone_meeting_contrast(sval, 80, color["dark"]["surface"], +1)[0], bk)
         state_mapping.append({"state": state, "light": light_v, "dark": dark_v})
 
     # Semantic: ui_intent

@@ -118,22 +118,36 @@ print("dark.surface(#121212 계열):", b0["foundation"]["color"]["dark"]["surfac
 print("surface container light 5단계:", list(b0["foundation"]["surface_tones"]["light"].keys()))
 print("의미색 state_mapping:", [(s["state"], s["light"], s["dark"]) for s in b0["semantic"]["state_mapping"]])
 
-print("\n=== 9. 의미색 4-토큰 패밀리(success/warning/danger) 생성·대비 확인 ===")
-FAMILY_SUBS = ("", "on-", "", "-container")  # 표기용
+print("\n=== 9. 의미색 4-토큰 패밀리 WCAG AA 보장(tone 조정 포함) 실측 ===")
 SUBKEYS = lambda n: [n, f"on-{n}", f"{n}-container", f"on-{n}-container"]
 fam_ok = True
+aa_ok = True
 for name in ds.SEMANTIC_FAMILY:
+    sd = ds.SEM_SEEDS[name]
     for mode in ("light", "dark"):
         cm = b0["foundation"]["color"][mode]
         present = all(k in cm for k in SUBKEYS(name))
         fam_ok = fam_ok and present
-        vals = {k: cm.get(k) for k in SUBKEYS(name)}
-        c_on = ds._contrast(cm[f"on-{name}"], cm[name])
-        c_surf = ds._contrast(cm[name], cm["surface"])
-        print(f"  {mode}.{name}: {vals} | on/{name} 대비={c_on:.2f} | {name}/surface 대비={c_surf:.2f}"
-              f" {'AA' if (c_on >= ds.WCAG_AA and c_surf >= ds.WCAG_AA) else 'AA미달->open_q'}")
-print("  4종(name/on-name/name-container/on-name-container) × light/dark × 3색 모두 생성:", fam_ok)
+        # 조정된 main tone 보고(40/80 -> 통과 tone)
+        start = 40 if mode == "light" else 80
+        step = -1 if mode == "light" else 1
+        _, adj_t = ds._tone_meeting_contrast(sd, start, cm["surface"], step)
+        # 4토큰 대비: main/surface, on-main/main, on-container/container
+        c_main_surf = ds._contrast(cm[name], cm["surface"])
+        c_on_main = ds._contrast(cm[f"on-{name}"], cm[name])
+        c_on_cont = ds._contrast(cm[f"on-{name}-container"], cm[f"{name}-container"])
+        passed = c_main_surf >= ds.WCAG_AA and c_on_main >= ds.WCAG_AA and c_on_cont >= ds.WCAG_AA
+        aa_ok = aa_ok and passed
+        print(f"  {mode}.{name}: main={cm[name]}(tone {start}->{adj_t}) on={cm[f'on-{name}']} cont={cm[f'{name}-container']} "
+              f"| main/surf={c_main_surf:.2f} on/main={c_on_main:.2f} on/cont={c_on_cont:.2f} {'AA OK' if passed else 'AA FAIL'}")
+print("  4종 × light/dark × 3색 모두 생성:", fam_ok)
+print("  light·dark 전 의미색 4토큰 WCAG AA 통과:", aa_ok)
 assert fam_ok, "의미색 4-토큰 패밀리 누락"
+assert aa_ok, "의미색 WCAG AA 미달 잔존"
+# open_questions의 WCAG 의미색 경고가 해소됐는지
+sem_wcag_oq = [q for q in b0["open_questions"] if "의미색 대비 미달" in q]
+print("  open_questions 잔존 '의미색 대비 미달' 경고:", sem_wcag_oq if sem_wcag_oq else "없음(해소)")
+assert not sem_wcag_oq, f"WCAG 경고 미해소: {sem_wcag_oq}"
 
 print("\n=== 10. 회귀: 기존 토큰 불변 + token_key 중복 없음 ===")
 # 기존 토큰(primary/surface/outline/typography/spacing/state_mapping base)이 그대로 존재
