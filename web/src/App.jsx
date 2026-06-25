@@ -164,6 +164,16 @@ export default function App() {
   const [reqs, setReqs] = useState("예약되면 좋겠고\n평일에 사람 모으고 싶다");
   const [platform, setPlatform] = useState("both");
 
+  // 테마: index.html이 초기 data-theme를 이미 설정함. 여기선 그 값을 읽어 토글/저장만.
+  const [theme, setTheme] = useState(() =>
+    (typeof document !== "undefined" && document.documentElement.getAttribute("data-theme")) || "light");
+  const toggleTheme = () => {
+    const next = theme === "dark" ? "light" : "dark";
+    document.documentElement.setAttribute("data-theme", next);
+    try { localStorage.setItem("roha-theme", next); } catch { /* noop */ }
+    setTheme(next);
+  };
+
   async function withBusy(fn) { setError(null); setBusy(true); try { await fn(); } catch (e) { setError(String(e.message || e)); } finally { setBusy(false); } }
   async function refresh(pkv) { const [s, r] = await Promise.all([api.status(pkv), api.records(pkv)]); setStatusData(s); setRecords(r.records || []); return { s, r }; }
 
@@ -201,6 +211,9 @@ export default function App() {
             ))}
           </>
         )}
+        <button className="theme-toggle" onClick={toggleTheme}>
+          {theme === "dark" ? "☀️ 라이트 모드" : "🌙 다크 모드"}
+        </button>
       </aside>
 
       <main className="main">
