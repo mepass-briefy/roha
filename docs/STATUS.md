@@ -272,3 +272,10 @@ goal_analysis -> discovery 확장·개명 완료(855124c, a030ecf). 역할 = 고
 
 1. 로컬 real LLM 전환: strategy 외 에이전트로 real_llm 확장(B6), BACKLOG B1 실행 메타 경로.
 2. frontend·mobile stale 해소: 새 design_system 구조(tokens/foundation) 반영 후 게이트 B5로 토큰 역추적 보존 확인.
+
+### 식별자 노출 원칙 (개정 — business_key UI 노출)
+
+1. PK(내부): 절대 비노출.
+2. business_key: 사람용 ID. 형식 ROHA0001 = 접두 4 대문자 고정 + 4자리 순번. 0001부터 +1, 9999 초과 시 접두 base-26 올림(ROHA9999 -> ROHB0001). 생성 시점 nextval로 부여(불변). UI에 노출되는 프로젝트 ID는 이 키다.
+3. public_key: 난수. API·URL 경로 전송용(불변). 화면에 프로젝트 ID로 표시하지 않고 fetch 경로에만 쓴다.
+4. 구현: business_key 생성은 db/pg_store.py(_gen_business_key + harness_business_seq), 신규 INSERT 시점에만 순번 소모(존재 확인 후 INSERT). 목록·status·create API가 business_key를 함께 반환하고 UI가 이를 표시한다. 기존 프로젝트는 생성순 ROHA0001..로 재부여 완료.

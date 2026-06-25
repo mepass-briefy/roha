@@ -113,7 +113,7 @@ def list_projects(tab: str = "active", sort: str = "recent", page: int = 1, page
                  "LEFT JOIN record_versions rv ON rv.pk = ir.current_version_pk")
     with _conn() as c, c.cursor() as cur:
         cur.execute(
-            f"SELECT p.public_key, p.created_at, coalesce(lc.status,'active') AS status, "
+            f"SELECT p.public_key, p.business_key, p.created_at, coalesce(lc.status,'active') AS status, "
             f"(SELECT count(*) FROM records r WHERE r.project_pk = p.pk AND r.status = 'confirmed') AS confirmed_n, "
             f"rv.body {base_from} WHERE {wsql} ORDER BY {order} LIMIT %s OFFSET %s",
             args + [page_size, offset])
@@ -121,11 +121,13 @@ def list_projects(tab: str = "active", sort: str = "recent", page: int = 1, page
         cur.execute(f"SELECT count(*) {base_from} WHERE {wsql}", args)
         total = cur.fetchone()[0]
     out = []
-    for public_key, created_at, status, confirmed_n, body in rows:
+    for public_key, business_key, created_at, status, confirmed_n, body in rows:
         title = None
         if isinstance(body, dict):
             title = body.get("site_character") or (body.get("goal") or {}).get("statement")
-        out.append({"public_key": public_key, "created_at": str(created_at), "status": status,
+        # business_key = 화면에 노출되는 사람용 ID, public_key = API·URL 호출용(경로 전송).
+        out.append({"public_key": public_key, "business_key": business_key,
+                    "created_at": str(created_at), "status": status,
                     "progress": {"confirmed": confirmed_n, "total": TOTAL_STEPS},
                     "title": title or "(제목 없음)"})
     return {"projects": out, "page": page, "page_size": page_size, "total": total,
@@ -178,9 +180,10 @@ def create_project(req: CreateReq):
     store.save_head({"pk": head_pk, "type": "intake", "project_pk": project_pk,
                      "current_version": 1, "current_version_pk": ver_pk, "status": "confirmed"})
     with _conn() as c, c.cursor() as cur:
-        cur.execute("SELECT public_key FROM projects WHERE pk = %s", (project_pk,))
-        public_key = cur.fetchone()[0]
-    return {"public_key": public_key, "site_character": requirement["site_character"], "status": "created"}
+        cur.execute("SELECT public_key, business_key FROM projects WHERE pk = %s", (project_pk,))
+        public_key, business_key = cur.fetchone()
+    return {"public_key": public_key, "business_key": business_key,
+            "site_character": requirement["site_character"], "status": "created"}
 
 
 @app.post("/projects/{public_key}/run")
@@ -222,13 +225,18 @@ def approve(public_key: str):
 
 @app.get("/projects/{public_key}/status")
 def status(public_key: str):
-    store = _store(_project_pk(public_key))
+    pk = _project_pk(public_key)
+    store = _store(pk)
     nodes = []
     for rt in NODE_ORDER:
         h = store.head(rt)
         nodes.append({"node": rt, "status": h["status"] if h else None,
                       "version": h["current_version"] if h else None})
-    return {"public_key": public_key, "nodes": nodes, "awaiting_approval": _awaiting(store)}
+    with _conn() as c, c.cursor() as cur:
+        cur.execute("SELECT business_key FROM projects WHERE pk = %s", (pk,))
+        business_key = cur.fetchone()[0]
+    return {"public_key": public_key, "business_key": business_key,
+            "nodes": nodes, "awaiting_approval": _awaiting(store)}
 
 
 @app.get("/projects/{public_key}/records")

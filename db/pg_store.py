@@ -25,12 +25,36 @@ from dotenv import load_dotenv
 load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
 _PK_SEQ = "harness_pk_seq"
+_BIZ_SEQ = "harness_business_seq"          # business_key 순번(ROHA0001 ...)
 _PUBKEY_ALPHABET = string.ascii_letters + string.digits
+_BIZ_PREFIX = "ROHA"                        # 접두 4 대문자(고정). 오버플로 시 base-26 올림.
 
 
 def _gen_public_key(n=12):
-    """외부 노출용 public_key(난수, 불변). 식별자 3종 중 외부용."""
+    """API·URL 전송용 public_key(난수, 불변). 화면에 ID로 표시하지 않음(식별자 3종 중 전송용)."""
     return "".join(secrets.choice(_PUBKEY_ALPHABET) for _ in range(n))
+
+
+def _roll_prefix(base: str, inc: int) -> str:
+    """4 대문자 접두를 base-26(A=0..Z=25, 오른쪽이 최하위)으로 inc만큼 올린다. 'ROHA'+1 -> 'ROHB'."""
+    num = 0
+    for ch in base:
+        num = num * 26 + (ord(ch) - 65)
+    num += inc
+    out = []
+    for _ in range(4):
+        out.append(chr(65 + num % 26))
+        num //= 26
+    return "".join(reversed(out))
+
+
+def _gen_business_key(n: int) -> str:
+    """사람용 business_key. n은 1부터의 순번. 형식: 접두 4 대문자 + 4자리(0001..9999).
+    9999 초과 시 접두를 한 칸 올리고 숫자를 0001로 되돌린다(ROHA9999 -> ROHB0001)."""
+    digits = (n - 1) % 9999 + 1
+    block = (n - 1) // 9999
+    prefix = _roll_prefix(_BIZ_PREFIX, block)
+    return f"{prefix}{digits:04d}"
 
 
 def _mime_for(path: str) -> str:
@@ -62,6 +86,7 @@ class PgStore:
     def _ensure_sequence(self):
         with self.conn.cursor() as cur:
             cur.execute(f"CREATE SEQUENCE IF NOT EXISTS {_PK_SEQ} START 1001")
+            cur.execute(f"CREATE SEQUENCE IF NOT EXISTS {_BIZ_SEQ} START 1")
 
     def _ensure_workflow(self, workflow):
         wf = workflow or {"workflow_key": "default", "version": 1, "status": "active", "nodes": []}
@@ -88,13 +113,20 @@ class PgStore:
             return cur.fetchone()[0]
 
     def _ensure_project(self):
-        # 식별자 3종: PK(내부), business_key(운영/검색), public_key(외부 노출, 난수·불변).
-        # ON CONFLICT (pk) DO NOTHING -> 최초 1회만 생성, public_key는 이후 불변.
+        # 식별자 3종: PK(내부, 비노출), business_key(사람용 ID·UI 노출, ROHA0001 순번),
+        # public_key(API·URL 전송용, 난수·불변).
+        # 존재하면 그대로 둔다(business_key 순번을 매 요청마다 소모하지 않도록 INSERT 전 확인).
+        # business_key 순번은 신규 INSERT 시점에만 nextval로 부여(=불변).
         with self.conn.cursor() as cur:
+            cur.execute("SELECT 1 FROM projects WHERE pk = %s", (self.project_pk,))
+            if cur.fetchone():
+                return
+            cur.execute(f"SELECT nextval('{_BIZ_SEQ}')")
+            business_key = _gen_business_key(int(cur.fetchone()[0]))
             cur.execute(
                 "INSERT INTO projects (pk, business_key, public_key, name, workflow_pk, workflow_ver) "
                 "VALUES (%s, %s, %s, %s, %s, %s) ON CONFLICT (pk) DO NOTHING",
-                (self.project_pk, f"PROJ-{self.project_pk}", _gen_public_key(),
+                (self.project_pk, business_key, _gen_public_key(),
                  f"project {self.project_pk}", self.workflow_pk, self._workflow_ver),
             )
 

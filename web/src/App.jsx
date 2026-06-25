@@ -119,7 +119,7 @@ function ProjectList({ onOpen }) {
                 const pct = Math.round((p.progress.confirmed / p.progress.total) * 100);
                 return (
                   <tr key={p.public_key}>
-                    <td>{p.title}{p.status === "done" && <span className="chip-done" style={{ marginLeft: 8 }}>완료</span>}<div className="muted" style={{ fontSize: 11 }}>{p.public_key}</div></td>
+                    <td>{p.title}{p.status === "done" && <span className="chip-done" style={{ marginLeft: 8 }}>완료</span>}<div className="muted" style={{ fontSize: 11 }}>{p.business_key}</div></td>
                     <td><span className="bar"><span className="bar-fill" style={{ width: pct + "%" }} /></span> <span className="muted">{p.progress.confirmed}/{p.progress.total}</span></td>
                     <td className="muted">{fmtDate(p.created_at)}</td>
                     <td>
@@ -188,7 +188,7 @@ export default function App() {
         <button className={`nav-btn ${view === "new" ? "active" : ""}`} onClick={() => { setView("new"); setPk(null); setNode(null); }}>＋ 새 프로젝트</button>
         {pk && view === "node" && (
           <>
-            <div className="sec-label">단계 — {pk}</div>
+            <div className="sec-label">단계 — {statusData?.business_key || ""}</div>
             {nodes.map((n, i) => (
               <button key={n.node} className={`nav-btn ${node === n.node ? "active" : ""}`} onClick={() => setNode(n.node)}>
                 <span className="num">{i + 1}</span><span className={`dot ${n.status || ""}`} /><span>{NODE_LABELS[n.node] || n.node}</span>

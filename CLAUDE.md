@@ -43,8 +43,8 @@ AI 에이전트 기반 서비스 생성 플랫폼(Agent Platform)의 하네스. 
 ### 3.3 식별자 3종
 
 1. 내부 PK = bigint/snowflake. 모든 FK는 PK 참조. 외부 비노출.
-2. Business Key = 사람이 읽는 문자열(PROJ-20260001). 검색·운영용.
-3. Public Key = 10~12자 난수. URL·API 응답용. lazy 생성, 불변. PK와 규칙적 연관 없음.
+2. Business Key = 사람이 읽는 ID. 형식 ROHA0001(접두 4 대문자 고정 + 4자리 순번, 0001부터 +1, 9999 초과 시 접두 base-26 올림 ROHA9999→ROHB0001). 검색·운영용. UI에 노출되는 프로젝트 ID는 이 키다.
+3. Public Key = 10~12자 난수. API·URL 경로 전송용. lazy 생성, 불변. PK와 규칙적 연관 없음. 화면에 프로젝트 ID로 표시하지 않는다(fetch 경로에만 사용).
 
 ### 3.4 provenance와 validation 분리 (핵심)
 
