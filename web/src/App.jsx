@@ -173,9 +173,9 @@ export default function App() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
 
-  const [goal, setGoal] = useState("동네 풋살 모임을 활성화하고 싶다");
-  const [context, setContext] = useState("기존 풋살장 운영 업체. 주말은 차는데 평일이 빔.");
-  const [reqs, setReqs] = useState("예약되면 좋겠고\n평일에 사람 모으고 싶다");
+  const [goal, setGoal] = useState("");
+  const [context, setContext] = useState("");
+  const [reqs, setReqs] = useState("");
   const [platform, setPlatform] = useState("both");
 
   // 테마: index.html이 초기 data-theme를 이미 설정함. 여기선 그 값을 읽어 토글/저장만.
@@ -239,7 +239,7 @@ export default function App() {
             <h2>새 프로젝트</h2>
             <div className="sub">고객 언어 그대로 입력하세요. AI가 해석(Discovery)한 뒤 사람이 확정합니다.</div>
             <label>목표 <span className="req">*</span></label>
-            <textarea value={goal} onChange={(e) => setGoal(e.target.value)} />
+            <textarea value={goal} onChange={(e) => setGoal(e.target.value)} placeholder="프로덕트의 구축 목표를 작성하세요" />
             <label>맥락 Context <span className="opt">(선택·권장)</span></label>
             <textarea value={context} onChange={(e) => setContext(e.target.value)} />
             <label>요구사항 <span className="opt">(선택, 줄마다 하나)</span></label>
