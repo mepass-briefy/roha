@@ -41,6 +41,11 @@ import gate_review
 DEFAULT_REQUIREMENT = {
     "site_character": "풋살 소셜매치 예약",
     "requirements": ["개인 신청", "매치 예약", "정산 확인"],
+    # discovery 입력 형상(server CreateReq와 동일): goal{statement,details}·context·target_platform.
+    "goal": {"statement": "개인이 팀 없이도 동네 풋살 매치에 참여하고 정산까지 투명하게",
+             "details": {"target_users": "풋살 동호인·개인 신청자", "constraints": "매니저 수동 배정 부담"}},
+    "context": "개인이 팀 없이 매치에 참여하고 매니저가 정산을 투명하게 관리하는 소셜 매치 서비스",
+    "target_platform": "both",
     "seed_competitors": ["PLAB", "아이엠그라운드"],
     "unique_angles": ["매니저 배정 자동화", "정산 투명성"],
     "brand_tokens": {"accent": "#7C3AED", "success": "#16A34A", "font_family": "Inter, sans-serif"},
