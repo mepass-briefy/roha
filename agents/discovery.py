@@ -28,6 +28,7 @@ SYSTEM_PROMPT = Path(__file__).with_name("agent_discovery.md").read_text(encodin
 REAL_MODEL_DEFAULT = "claude-sonnet-4-6"
 GI_KEYS = ("inferred_dimensions", "candidate_metrics", "assumptions")
 REQ_ORIGINS = ("explicit", "context-inferred")
+PROPOSED_ORIGIN = "proposed"   # 제안 요구(상용 준비). 충실 정규화(R-)와 분리된 별도 추론 층.
 
 REAL_MODE_INSTRUCTION = (
     "\n\n## real 모드 지시(Discovery = 고객 언어 -> 시스템 언어 번역)\n"
@@ -41,6 +42,15 @@ REAL_MODE_INSTRUCTION = (
     "2. 기능 제안 금지(어떻게 만들지는 Features). 요구의 정리·해석까지만.\n"
     "3. 사업 판단 금지(채택·우선순위는 open_questions).\n"
     "4. 애매하면 requirement 항목으로 만들지 말고 open_questions로.\n"
+    "B-2. proposed_requirements: 상용·운영을 위해 '고객이 말하지 않았지만 필요한' 요구를 제안한다(requirement_normalization과 별도 층). "
+    "각 항목 {id:\"P-01\".., statement, category, rationale, basis, origin:\"proposed\"}. "
+    "이것은 R-(충실 정규화)를 오염시키지 않는다: R-은 고객이 말한 것만, P-는 그 말에서 도출되는 상용 함의의 제안이다. "
+    "basis 필수(어느 고객 cue/R-항목/context 구절에서 도출됐는지). 근거 없는 제안은 fabrication이므로 금지. "
+    "rationale 필수(왜 상용에 필요한가). 전부 사람 확정 전 '검토 필요'. provenance.proposed_requirements=\"inference\".\n"
+    "  제안 대상 예(고객 cue가 있을 때만): 관리자/운영 언급 -> 역할 기반 접근 제어(RBAC)·폐쇄적 접근 구조(관리 기능 비공개), "
+    "회원/가입/인증 언급 -> 인증·계정 보안 기준(비밀번호·세션·인가), 정산/결제/계약금 언급 -> 거래·정산 무결성·감사 로그, "
+    "검증 언급 -> 신원·자격 검증 프로세스(승인 주체·기준·기록), 개인정보 언급 -> 개인정보 보호·최소수집·접근통제. "
+    "cue가 없으면 해당 제안을 만들지 않는다(일반론 나열 금지).\n"
     "C. open_questions: 목표·요구 양쪽의 불확실성.\n"
     "D. Context 활용: intake.context(고객·프로덕트 맥락)가 있으면 Goal과 함께 해석한다. Context에서 끌어낸 것은 inference로 표기하고(단정 금지), "
     "Context 기반으로 정리한 요구는 origin=\"context-inferred\"로 둔다(고객이 직접 말한 explicit과 구분). "
@@ -71,7 +81,8 @@ def _extract_json(text: str) -> str:
 
 def validate(body: dict) -> dict:
     """합의된 제약을 코드로 강제한다. 위반 시 raise."""
-    required = {"goal_interpretation", "requirement_normalization", "open_questions", "provenance", "target_platform"}
+    required = {"goal_interpretation", "requirement_normalization", "proposed_requirements",
+                "open_questions", "provenance", "target_platform"}
     missing = required - set(body)
     if missing:
         raise ValueError(f"discovery body 필드 누락: {missing}")
@@ -111,7 +122,75 @@ def validate(body: dict) -> dict:
             raise ValueError(f"requirement '{r.get('id')}' origin은 explicit|context-inferred 여야 함(현재 '{r.get('origin')}')")
     if body["requirement_normalization"] and prov.get("requirement_normalization") != "per_item":
         raise ValueError("provenance.requirement_normalization은 per_item이어야 함(항목별 origin)")
+
+    # proposed_requirements: 상용 준비 제안(별도 추론 층). R-을 오염시키지 않는다.
+    # 각 항목은 basis(고객 cue 근거)+rationale 필수. 근거 없는 제안은 fabrication.
+    proposed = body.get("proposed_requirements", [])
+    if not isinstance(proposed, list):
+        raise ValueError("proposed_requirements는 리스트여야 함")
+    for p in proposed:
+        if not p.get("id"):
+            raise ValueError("proposed_requirements 항목에 id 누락")
+        if not p.get("statement"):
+            raise ValueError(f"proposed '{p.get('id')}'에 statement 없음")
+        if not p.get("basis"):
+            raise ValueError(f"No-Fabrication 위반: proposed '{p.get('id')}'에 basis(고객 cue 근거) 없음")
+        if not p.get("rationale"):
+            raise ValueError(f"proposed '{p.get('id')}'에 rationale(상용 필요 근거) 없음")
+        if p.get("origin") != PROPOSED_ORIGIN:
+            raise ValueError(f"proposed '{p.get('id')}' origin은 '{PROPOSED_ORIGIN}'여야 함(현재 '{p.get('origin')}')")
+    if proposed and prov.get("proposed_requirements") != "inference":
+        raise ValueError("provenance.proposed_requirements는 inference여야 함(제안=추론, 사람 확정 전)")
     return body
+
+
+_PROPOSAL_RULES = [
+    (["어드민", "관리자", "관리", "운영"],
+     {"statement": "역할 기반 접근 제어(RBAC): 관리자·운영자와 일반 사용자의 권한을 분리한다.",
+      "category": "access-control",
+      "rationale": "관리/운영 주체와 다수 사용자 유형이 존재 — 상용은 권한 분리 없이는 운영·보안이 성립하지 않음."}),
+    (["어드민", "관리자", "권한", "접근"],
+     {"statement": "폐쇄적 접근 구조: 관리·운영 기능은 인증·인가된 사용자만 접근(공개 노출 금지).",
+      "category": "access-control",
+      "rationale": "관리 기능이 공개 경로에 노출되면 무단 접근 위험. 상용 기본 통제."}),
+    (["회원", "가입", "로그인", "인증", "계정"],
+     {"statement": "인증·계정 보안 기준(비밀번호 정책·세션 관리·인가 검사).",
+      "category": "security",
+      "rationale": "회원/가입을 언급 — 계정이 존재하면 인증·세션·인가는 필수 기반."}),
+    (["정산", "결제", "계약금", "거래", "대금"],
+     {"statement": "거래·정산 무결성과 감사 로그(금액·상태 변경 이력 추적·정산 검증).",
+      "category": "data-integrity",
+      "rationale": "금전 흐름을 언급 — 분쟁·오류 대비 변경 이력과 검증이 상용 필수."}),
+    (["검증", "인증서", "자격", "실명"],
+     {"statement": "신원·자격 검증 프로세스 정의(승인 주체·기준·기록).",
+      "category": "operations",
+      "rationale": "검증을 언급 — 누가 무엇을 어떤 기준으로 승인하는지 정의 필요."}),
+]
+
+
+def _propose(requirements, context):
+    """결정적 제안 생성(mock). 고객 cue가 있을 때만 제안한다(근거 없는 일반론 금지)."""
+    items = [(f"R-{i + 1:02d}", r) for i, r in enumerate(requirements)]
+    ctx = context or ""
+
+    def find_basis(keys):
+        for rid, r in items:
+            if any(k in r for k in keys):
+                return f"{rid}: {r}"
+        if ctx and any(k in ctx for k in keys):
+            return "intake.context"
+        return None
+
+    out, seen = [], set()
+    for keys, prop in _PROPOSAL_RULES:
+        if prop["statement"] in seen:
+            continue
+        basis = find_basis(keys)
+        if not basis:                     # 근거 없으면 제안하지 않음(No-Fabrication)
+            continue
+        seen.add(prop["statement"])
+        out.append({"id": f"P-{len(out) + 1:02d}", **prop, "origin": PROPOSED_ORIGIN, "basis": basis})
+    return out
 
 
 def offline_llm(system: str, user: str) -> str:
@@ -157,6 +236,9 @@ def offline_llm(system: str, user: str) -> str:
     if not requirements:
         open_questions.append("요구사항 미제공: 정규화할 요구 없음.")
 
+    # proposed_requirements: 고객 cue에서 도출되는 상용 준비 제안(R-과 분리, 사람 확정 전).
+    proposed_requirements = _propose(requirements, context)
+
     # target_platform: 입력값(fact). 미지정이면 '미정'으로 저장 + open_question.
     if not payload.get("target_platform"):
         open_questions.append("target_platform 미지정: 기본 '미정'으로 저장(web|mobile|both 협의 필요).")
@@ -168,10 +250,11 @@ def offline_llm(system: str, user: str) -> str:
             "assumptions": assumptions,
         },
         "requirement_normalization": requirement_normalization,
+        "proposed_requirements": proposed_requirements,
         "open_questions": open_questions,
         "target_platform": target_platform,
         "provenance": {"goal_interpretation": "inference", "requirement_normalization": "per_item",
-                       "target_platform": "fact"},
+                       "proposed_requirements": "inference", "target_platform": "fact"},
     }
     return json.dumps(body, ensure_ascii=False)
 

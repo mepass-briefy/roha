@@ -51,7 +51,12 @@ function DiscoveryView({ body }) {
     <div className="notice">AI가 고객 말을 해석한 결과입니다(전부 추론·미확정).</div>
     <h3>목표 해석 — 차원</h3>{(gi.inferred_dimensions || []).map((d, i) => <div className="item" key={i}>{d.dimension}<div className="meta">근거: {d.basis}</div></div>)}
     <h3>후보 지표</h3>{(gi.candidate_metrics || []).map((m, i) => <div className="item" key={i}>{m.metric} <span className="badge b-inference">conf: {m.confidence}</span><div className="meta">{m.rationale}</div></div>)}
-    <h3>요구 정규화</h3>{(body.requirement_normalization || []).map((r) => <div className="item" key={r.id}><b>{r.id}</b> {r.statement}<span className={`badge ${r.origin === "context-inferred" ? "b-context" : "b-explicit"}`}>{r.origin === "context-inferred" ? "맥락 추론" : "고객 명시"}</span></div>)}
+    <h3>요구 정규화 — 고객이 말한 것</h3>{(body.requirement_normalization || []).map((r) => <div className="item" key={r.id}><b>{r.id}</b> {r.statement}<span className={`badge ${r.origin === "context-inferred" ? "b-context" : "b-explicit"}`}>{r.origin === "context-inferred" ? "맥락 추론" : "고객 명시"}</span></div>)}
+    {(body.proposed_requirements || []).length > 0 && <>
+      <h3>제안 요구 — 상용 준비 (검토 필요)</h3>
+      <div className="notice" style={{ marginBottom: 8 }}>고객이 말하지 않았지만 상용에 필요한 항목입니다. 채택 여부는 사람이 정합니다.</div>
+      {body.proposed_requirements.map((p) => <div className="item" key={p.id}><b>{p.id}</b> {p.statement}<span className="badge b-proposed">제안</span>{p.category && <span className="badge b-inference">{p.category}</span>}<div className="meta">근거: {p.basis}</div><div className="meta">이유: {p.rationale}</div></div>)}
+    </>}
     <h3>확인 필요</h3><ul className="oq">{(body.open_questions || []).map((q, i) => <li key={i}>{q}</li>)}</ul>
     <div className="meta">target_platform: <b>{body.target_platform}</b></div>
   </>);

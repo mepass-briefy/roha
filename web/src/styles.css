@@ -88,6 +88,8 @@ button:disabled { opacity: .5; cursor: default; }
 .b-explicit, .b-fact { background: var(--md-primary-container); color: var(--md-on-primary-container); }
 .b-context { background: #FEF3E2; color: #B45309; }
 @media (prefers-color-scheme: dark) { .b-context { background: #3a2c14; color: #f3c980; } }
+.b-proposed { background: #EDE9FE; color: #6D28D9; }
+@media (prefers-color-scheme: dark) { .b-proposed { background: #2e2350; color: #c7b8f5; } }
 .gate { font-size: 12px; padding: 2px 8px; border-radius: 6px; margin-left: 6px; }
 .g-PASS { background:#E7F6EC; color:#15803D; } .g-WARN { background:#FEF3E2; color:#B45309; } .g-FAIL { background:#FDE7E7; color:#B91C1C; }
 
