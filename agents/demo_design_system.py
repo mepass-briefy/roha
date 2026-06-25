@@ -117,4 +117,41 @@ print("light.primary:", b0["foundation"]["color"]["light"]["primary"], "| dark.p
 print("dark.surface(#121212 계열):", b0["foundation"]["color"]["dark"]["surface"])
 print("surface container light 5단계:", list(b0["foundation"]["surface_tones"]["light"].keys()))
 print("의미색 state_mapping:", [(s["state"], s["light"], s["dark"]) for s in b0["semantic"]["state_mapping"]])
+
+print("\n=== 9. 의미색 4-토큰 패밀리(success/warning/danger) 생성·대비 확인 ===")
+FAMILY_SUBS = ("", "on-", "", "-container")  # 표기용
+SUBKEYS = lambda n: [n, f"on-{n}", f"{n}-container", f"on-{n}-container"]
+fam_ok = True
+for name in ds.SEMANTIC_FAMILY:
+    for mode in ("light", "dark"):
+        cm = b0["foundation"]["color"][mode]
+        present = all(k in cm for k in SUBKEYS(name))
+        fam_ok = fam_ok and present
+        vals = {k: cm.get(k) for k in SUBKEYS(name)}
+        c_on = ds._contrast(cm[f"on-{name}"], cm[name])
+        c_surf = ds._contrast(cm[name], cm["surface"])
+        print(f"  {mode}.{name}: {vals} | on/{name} 대비={c_on:.2f} | {name}/surface 대비={c_surf:.2f}"
+              f" {'AA' if (c_on >= ds.WCAG_AA and c_surf >= ds.WCAG_AA) else 'AA미달->open_q'}")
+print("  4종(name/on-name/name-container/on-name-container) × light/dark × 3색 모두 생성:", fam_ok)
+assert fam_ok, "의미색 4-토큰 패밀리 누락"
+
+print("\n=== 10. 회귀: 기존 토큰 불변 + token_key 중복 없음 ===")
+# 기존 토큰(primary/surface/outline/typography/spacing/state_mapping base)이 그대로 존재
+for k in ("primary", "on-primary", "primary-container", "surface", "on-surface", "outline"):
+    assert k in b0["foundation"]["color"]["light"], f"기존 토큰 누락: {k}"
+keys = [t["token_key"] for t in b0["tokens"]]
+dups = sorted({k for k in keys if keys.count(k) > 1})
+print("  token_key 중복:", dups if dups else "없음")
+assert not dups, f"token_key 중복 발생(추가만 위반): {dups}"
+# state_mapping base 토큰(color.light.success 등)이 여전히 tokens에 존재(중복 없이)
+for name in ds.SEMANTIC_FAMILY:
+    assert f"color.light.{name}" in keys and f"color.dark.{name}" in keys, f"base 토큰 누락: {name}"
+    # foundation.color base == state_mapping base (일관성)
+    sm = next(s for s in b0["semantic"]["state_mapping"] if s["state"] == name)
+    assert b0["foundation"]["color"]["light"][name] == sm["light"], f"{name} light base 불일치"
+    assert b0["foundation"]["color"]["dark"][name] == sm["dark"], f"{name} dark base 불일치"
+print("  기존 primary/surface/outline 토큰 불변 + base 일관성 OK")
+print("  의미색 추가 토큰 수(success/warning/danger × 6 신규키):",
+      sum(1 for k in keys if any(k.startswith(f"color.{m}.on-{n}") or k.startswith(f"color.{m}.{n}-container")
+                                 for m in ("light", "dark") for n in ds.SEMANTIC_FAMILY)))
 print("\nDONE")

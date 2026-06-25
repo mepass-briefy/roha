@@ -24,6 +24,10 @@ BASELINE_ICONS = "Tabler"
 NEUTRAL_SEED = "#787579"       # 토대 중립(브랜드 무관, 항상 baseline)
 
 SEM_SEEDS = {"success": "#16A34A", "warning": "#D97706", "danger": "#DC2626", "info": "#2563EB"}
+# 의미색 4-토큰 패밀리(name/on-name/name-container/on-name-container) 생성 대상.
+# hue는 의미에 고정(SEM_SEEDS, 초록/앰버/빨강) — brand seed와 무관하게 항상 동일(success는 어떤 brand든 초록).
+# 명도·container 톤은 primary와 동일한 _tone() 패턴 재사용(새 알고리즘 없음). info는 패밀리 제외(base만 state_mapping에서 유지).
+SEMANTIC_FAMILY = ("success", "warning", "danger")
 PRIMITIVES = ("button", "input", "badge", "table", "card", "nav")
 WCAG_AA = 4.5
 
@@ -228,6 +232,28 @@ def _build_body(intake, strategy, ux):
     color["dark"]["surface"] = push("color.dark.surface", _tone(NEUTRAL_SEED, 6, neutral=True))
     color["dark"]["on-surface"] = push("color.dark.on-surface", _tone(NEUTRAL_SEED, 90, neutral=True))
     color["dark"]["outline"] = push("color.dark.outline", _tone(NEUTRAL_SEED, 60, neutral=True))
+
+    # 의미색 4-토큰 패밀리(success/warning/danger): primary와 완전히 동일한 톤 패턴/엔진 재사용.
+    # hue 고정(SEM_SEEDS, brand 무관). base 토큰 color.{mode}.{name}은 아래 state_mapping이 이미 push하므로
+    # 여기서는 dict에 값만 노출하고(중복 token_key 방지), on-/container/on-container 3종만 추가 push.
+    for name in SEMANTIC_FAMILY:
+        sd = SEM_SEEDS[name]
+        # base: state_mapping과 동일 값(_tone 40/80). 토큰은 state_mapping이 push → 여기선 dict 노출만.
+        color["light"][name] = _tone(sd, 40)
+        color["dark"][name] = _tone(sd, 80)
+        # 추가 토큰(신규 key) — primary와 동일 톤(light 100/90/10, dark 20/30/90)
+        color["light"][f"on-{name}"] = push(f"color.light.on-{name}", _tone(sd, 100))
+        color["light"][f"{name}-container"] = push(f"color.light.{name}-container", _tone(sd, 90))
+        color["light"][f"on-{name}-container"] = push(f"color.light.on-{name}-container", _tone(sd, 10))
+        color["dark"][f"on-{name}"] = push(f"color.dark.on-{name}", _tone(sd, 20))
+        color["dark"][f"{name}-container"] = push(f"color.dark.{name}-container", _tone(sd, 30))
+        color["dark"][f"on-{name}-container"] = push(f"color.dark.on-{name}-container", _tone(sd, 90))
+        # WCAG AA: on-name이 name 위에서, name이 surface 위에서 대비 충족(기존 _contrast 재사용). 미달은 open_questions.
+        for mode in ("light", "dark"):
+            if _contrast(color[mode][f"on-{name}"], color[mode][name]) < WCAG_AA:
+                open_questions.append(f"의미색 대비 미달: {mode} on-{name}/{name} (WCAG AA 4.5:1 미달) -> 확인 필요")
+            if _contrast(color[mode][name], color[mode]["surface"]) < WCAG_AA:
+                open_questions.append(f"의미색 대비 미달: {mode} {name}/surface (WCAG AA 4.5:1 미달) -> 확인 필요")
 
     # A2: surface container 톤 5단계(lowest~highest). 다크 base #121212 계열.
     surface_tones = {
