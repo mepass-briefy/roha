@@ -213,6 +213,7 @@ def produce(inputs: dict, llm=offline_llm) -> dict:
     ux = inputs.get("ux", {})
     security = inputs.get("security", {})
     strategy = inputs.get("strategy", {})
+    discovery = inputs.get("discovery", {})  # v12: discovery 입력 연결(받기만, 활용은 real 단계 프롬프트에서)
     raw = llm(SYSTEM_PROMPT, build_user_prompt(intake, ux, security, strategy))
     raw = raw.replace("```json", "").replace("```", "").strip()
     body = json.loads(raw)

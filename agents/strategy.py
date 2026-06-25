@@ -161,6 +161,7 @@ real_llm = make_real_llm()
 
 def produce(inputs: dict, llm=offline_llm) -> dict:
     intake = inputs["intake"]
+    discovery = inputs.get("discovery", {})  # v12: discovery 입력 연결(받기만, 활용은 real 단계 프롬프트에서)
     raw = llm(SYSTEM_PROMPT, build_user_prompt(intake))
     raw = raw.replace("```json", "").replace("```", "").strip()
     body = json.loads(raw)
