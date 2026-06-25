@@ -14,11 +14,12 @@ Contract Compliance(각 에이전트 계약), Provenance(항목별 표기), Requ
   계약 위반 존재 -> FAIL
 반환: {"status": "PASS|WARN|FAIL", "reasons": [...], "warnings": [...]}
 
-두 레벨 분리(backend·wireframe·features): 계약 위반=ERROR=reasons(FAIL, 차단) vs 품질 미달=WARN=warnings(통과, EXIT 0).
+두 레벨 분리(backend·wireframe·features·design_system): 계약 위반=ERROR=reasons(FAIL, 차단) vs 품질 미달=WARN=warnings(통과, EXIT 0).
 에이전틱 루프가 없으므로 '지금 막으면 자동 복구 수단이 없는 것'만 ERROR로 한다.
-  ERROR(차단): 빈 산출(entities/endpoints/screens/features=[]), 발명(source 근거 형식 위반·미존재 참조), 식별자 3종 결손(backend), 외부 public_key 위반(backend).
-  WARN(통과): 빈약(fields·수용기준 부족·관계 미모델링), 커버리지 일부 결손, 권고(네이밍 등).
-  features는 식별자 3종·외부 public_key 비해당. source 근거 prefix는 ux:/requirement:/derived:/http.
+  ERROR(차단): 빈 산출(entities/endpoints/screens/features/component=[]), 발명(source 근거 형식 위반·미존재 참조),
+    식별자 3종 결손(backend), 외부 public_key 위반(backend), 하드코딩 색·WCAG 위반(design_system).
+  WARN(통과): 빈약(fields·수용기준 부족·관계 미모델링), 커버리지 일부 결손, 컴포넌트 상태 누락, 권고(네이밍 등).
+  features는 식별자 3종·외부 public_key 비해당. design_system은 토큰 엔진이 결정적(WCAG 보장)이라 정상 산출은 ERROR 0.
 재생성 루프·agent 재실행·orchestrator 수정 금지. FAIL(ERROR)이면 사유만 보고한다.
 """
 
@@ -175,6 +176,44 @@ def contract_levels(record_type, body):
                 warns.append(f"[품질] feature '{nm}' 수용 기준(acceptance_criteria) 빈약")
         # 6) 커버리지(품질): discovery 목표 대조는 body에 discovery_index가 없어 생략(형식 검사로 유지).
 
+    elif record_type == "design_system":
+        import re as _re
+        import design_system as _ds
+        _HEXLIT = _re.compile(r"#[0-9A-Fa-f]{3,8}\b")
+
+        def _has_hex(obj):
+            if isinstance(obj, str):
+                return bool(_HEXLIT.search(obj))
+            if isinstance(obj, dict):
+                return any(_has_hex(v) for v in obj.values())
+            if isinstance(obj, list):
+                return any(_has_hex(v) for v in obj)
+            return False
+
+        comps = body.get("component") or []
+        # 1) 빈 산출 = ERROR
+        if not comps:
+            errors.append("[빈 산출] design_system component=[] — 컴포넌트가 비어선 안 됨")
+        for c in comps:
+            nm = c.get("component", "?")
+            # 2) 하드코딩 색 = ERROR: 컴포넌트는 토큰 키만 참조(states·uses_tokens에 hex 직접 금지)
+            if _has_hex(c.get("states", {})) or _has_hex(c.get("uses_tokens", [])):
+                errors.append(f"[하드코딩 색] component '{nm}'가 토큰 대신 hex 색을 직접 참조")
+            # 5) 품질: 상태/토큰 참조 누락 = WARN
+            if not c.get("states"):
+                warns.append(f"[품질] component '{nm}' 상태(states) 누락")
+            if not c.get("uses_tokens"):
+                warns.append(f"[품질] component '{nm}' uses_tokens 미참조")
+        # 3) WCAG 위반 = ERROR: 의미색 4토큰(엔진 보장) 대비 미달이면 차단
+        col = (body.get("foundation") or {}).get("color") or {}
+        for name in ("success", "warning", "danger"):
+            for mode in ("light", "dark"):
+                cm = col.get(mode) or {}
+                if all(k in cm for k in (name, f"on-{name}", "surface")):
+                    if (_ds._contrast(cm[f"on-{name}"], cm[name]) < _ds.WCAG_AA
+                            or _ds._contrast(cm[name], cm["surface"]) < _ds.WCAG_AA):
+                        errors.append(f"[WCAG] {mode} 의미색 '{name}' 대비 미달(4.5:1)")
+
     return errors, warns
 
 
@@ -262,10 +301,9 @@ def run_review_gate(record_type, body):
     if not body.get("provenance"):
         reasons.append("Provenance 표기 없음(계약)")
 
-    # backend·wireframe·features: 계약 위반=ERROR(reasons, 차단) vs 품질 미달=WARN(warnings, 통과) 항목별 분리.
-    # (1 빈 산출 / 2 발명 / 3 식별자 3종 / 4 외부 public_key = ERROR. 5 빈약 / 6 커버리지 = WARN.)
-    # features에 식별자 3종·외부 public_key는 비해당(backend 전용).
-    if record_type in ("backend", "wireframe", "features"):
+    # backend·wireframe·features·design_system: 계약 위반=ERROR(reasons, 차단) vs 품질 미달=WARN(warnings, 통과) 항목별 분리.
+    # (빈 산출 / 발명 / 식별자 3종(backend) / 외부 public_key(backend) / 하드코딩 색·WCAG(design_system) = ERROR. 빈약 / 커버리지 / 상태 누락 = WARN.)
+    if record_type in ("backend", "wireframe", "features", "design_system"):
         errs, qwarns = contract_levels(record_type, body)
         reasons.extend(errs)
         warnings.extend(qwarns)

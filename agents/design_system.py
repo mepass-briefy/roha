@@ -50,8 +50,103 @@ SEM_SEEDS = {"success": "#16A34A", "warning": "#D97706", "danger": "#DC2626", "i
 # hue는 의미에 고정(SEM_SEEDS, 초록/앰버/빨강) — brand seed와 무관하게 항상 동일(success는 어떤 brand든 초록).
 # 명도·container 톤은 primary와 동일한 _tone() 패턴 재사용(새 알고리즘 없음). info는 패밀리 제외(base만 state_mapping에서 유지).
 SEMANTIC_FAMILY = ("success", "warning", "danger")
-PRIMITIVES = ("button", "input", "badge", "table", "card", "nav")
+# ROHA 디자인 명세 13종 컴포넌트(DESIGN_SYSTEM_SPEC.md §5).
+PRIMITIVES = ("sidebar", "select", "tab", "checkbox", "radio_card", "toggle",
+              "button", "badge", "input", "table", "profile", "card", "search")
+INTERACTIVE = {"sidebar", "select", "tab", "checkbox", "radio_card", "toggle", "button", "input", "search"}
 WCAG_AA = 4.5
+
+# 역할 토큰(명세 §2,§3): brand별 checked/tab/neutral 고정값. 미지정 seed는 결정적 파생.
+THEME_ROLES = {
+    "#3F51B5": {  # 인디고
+        "checked": {"light": "#51C0FF", "dark": "#51C0FF"},
+        "tab-bg": {"light": "#EDF9FF", "dark": "#0D1F35"},
+        "tab-fg": {"light": "#1056BD", "dark": "#5BA3D4"},
+        "neutral": {"light": "#292929", "dark": "#E6E5E6"},
+        "on-neutral": {"light": "#FFFFFF", "dark": "#1A191A"},
+    },
+    "#FF5E5E": {  # 코랄
+        "checked": {"light": "#FF5E5E", "dark": "#FF5E5E"},
+        "tab-bg": {"light": "#FFEFEF", "dark": "#2D1515"},
+        "tab-fg": {"light": "#FF5E5E", "dark": "#FF5E5E"},
+        "neutral": {"light": "#292F45", "dark": "#E6E5E6"},
+        "on-neutral": {"light": "#FFFFFF", "dark": "#1A191A"},
+    },
+}
+# brand 무관 고정 역할(명세 §3): active(접속, success와 구분), menu-sel(활성메뉴), danger-soft.
+ROLE_FIXED = {
+    "active": {"light": "#10A957", "dark": "#3DD17F"},
+    "menu-sel": {"light": "#EEEEEE", "dark": "#2C2B2C"},
+    "danger-soft-bg": {"light": "#FFF0F0", "dark": "#3A1515"},
+    "danger-soft-fg": {"light": "#AB0909", "dark": "#F1A7A7"},
+}
+
+# 컴포넌트별 states·uses_tokens(역할 토큰 참조). 명세 §5. 토큰 키만 참조(하드코딩 색 금지).
+COMPONENT_SPECS = {
+    "sidebar": {
+        "states": {"enabled": {"bg": "color.light.surface", "border": "color.light.outline"},
+                   "nav-hover": {"bg": "color.light.surface-container-base"},
+                   "nav-active": {"bg": "color.light.menu-sel", "fg": "color.light.on-surface"}},
+        "uses_tokens": ["color.light.surface", "color.light.menu-sel", "color.light.outline", "radius.r-md", "spacing.sp-2"]},
+    "select": {
+        "states": {"enabled": {"bg": "color.light.surface", "border": "color.light.outline", "fg": "color.light.on-surface"},
+                   "focus": {"border": "color.light.primary"}, "disabled": {"bg": "ui_intent.disabled"}},
+        "uses_tokens": ["color.light.surface", "color.light.outline", "radius.r-md", "spacing.sp-3"]},
+    "tab": {
+        "states": {"enabled": {"bg": "color.light.surface", "fg": "color.light.on-surface"},
+                   "active": {"bg": "color.light.tab-bg", "fg": "color.light.tab-fg"}},
+        "uses_tokens": ["color.light.tab-bg", "color.light.tab-fg", "color.light.outline", "radius.r-lg"]},
+    "checkbox": {
+        "states": {"enabled": {"border": "color.light.outline"},
+                   "checked": {"bg": "color.light.checked", "fg": "color.light.on-primary"}},
+        "uses_tokens": ["color.light.checked", "radius.r-sm"]},
+    "radio_card": {
+        "states": {"enabled": {"border": "color.light.outline"},
+                   "selected": {"border": "color.light.tab-fg", "bg": "color.light.tab-bg"}},
+        "uses_tokens": ["color.light.tab-bg", "color.light.tab-fg", "radius.r-lg"]},
+    "toggle": {
+        "states": {"off": {"bg": "color.light.surface-container-highest", "knob": "color.light.surface-container-lowest"},
+                   "on": {"bg": "color.light.checked", "knob": "color.light.surface-container-lowest"}},
+        "uses_tokens": ["color.light.checked", "radius.r-xl"]},
+    "button": {  # 명세 5종: primary/neutral/outline/danger/danger-soft
+        "states": {"primary": {"bg": "color.light.primary", "fg": "color.light.on-primary"},
+                   "neutral": {"bg": "color.light.neutral", "fg": "color.light.on-neutral"},
+                   "outline": {"bg": "transparent", "border": "color.light.outline", "fg": "color.light.on-surface"},
+                   "danger": {"bg": "transparent", "fg": "color.light.danger-soft-fg"},
+                   "danger-soft": {"bg": "color.light.danger-soft-bg", "fg": "color.light.danger-soft-fg"},
+                   "disabled": {"bg": "ui_intent.disabled"}},
+        "uses_tokens": ["color.light.primary", "color.light.neutral", "color.light.on-neutral",
+                        "color.light.danger-soft-bg", "color.light.danger-soft-fg", "color.light.outline", "radius.r-md"]},
+    "badge": {  # pill, 의미색·active·muted
+        "states": {"prim": {"bg": "color.light.primary-container", "fg": "color.light.on-primary-container"},
+                   "success": {"bg": "color.light.success", "fg": "color.light.on-success"},
+                   "warning": {"bg": "color.light.warning", "fg": "color.light.on-warning"},
+                   "danger": {"bg": "color.light.danger", "fg": "color.light.on-danger"},
+                   "active": {"bg": "color.light.surface-container-low", "fg": "color.light.active"},
+                   "muted": {"bg": "color.light.surface-container-base", "fg": "color.light.outline"}},
+        "uses_tokens": ["color.light.primary-container", "color.light.success", "color.light.warning",
+                        "color.light.danger", "color.light.active", "radius.r-xl"]},
+    "input": {
+        "states": {"enabled": {"bg": "color.light.surface", "border": "color.light.outline", "fg": "color.light.on-surface"},
+                   "focus": {"border": "color.light.primary"}, "disabled": {"bg": "ui_intent.disabled"}},
+        "uses_tokens": ["color.light.surface", "color.light.outline", "color.light.primary", "radius.r-md"]},
+    "table": {
+        "states": {"header": {"fg": "color.light.outline", "border": "color.light.outline"},
+                   "row": {"fg": "color.light.on-surface", "border": "color.light.outline"},
+                   "hover": {"bg": "color.light.surface-container-base"}},
+        "uses_tokens": ["color.light.on-surface", "color.light.outline", "spacing.sp-3"]},
+    "profile": {
+        "states": {"enabled": {"bg": "color.light.surface-container-base", "fg": "color.light.on-surface"},
+                   "active": {"dot": "color.light.active"}},
+        "uses_tokens": ["color.light.active", "color.light.surface-container-base"]},
+    "card": {
+        "states": {"enabled": {"bg": "color.light.surface", "border": "color.light.outline"}},
+        "uses_tokens": ["color.light.surface", "color.light.outline", "radius.r-lg", "spacing.sp-6"]},
+    "search": {
+        "states": {"enabled": {"bg": "color.light.surface", "border": "color.light.outline", "fg": "color.light.outline"},
+                   "focus": {"border": "color.light.primary"}},
+        "uses_tokens": ["color.light.surface", "color.light.outline", "radius.r-md"]},
+}
 
 # E: override 가능 키(표현층). color.* 와 font.family/font.weight 만 offline 허용.
 def _in_whitelist(key):
@@ -153,6 +248,21 @@ def _tone_meeting_contrast(seed_hex, start_tone, bg_hex, step):
 
 
 # ---------------- B: seed 도출 ----------------
+def _role_tokens(primary_hex):
+    """역할 토큰(checked/tab-bg/tab-fg/neutral/on-neutral): 명세 테마(인디고/코랄)는 lookup, 미지정 seed는 결정적 파생.
+    엔진 톤 함수(_tone 등) 무수정 — 여기서 emit용 값만 구성한다."""
+    t = THEME_ROLES.get(str(primary_hex).upper())
+    if t is not None:
+        return t
+    return {  # 범용 파생: checked=밝은 brand, tab-bg=옅은 tint, tab-fg=읽기색
+        "checked": {"light": _tone(primary_hex, 70), "dark": _tone(primary_hex, 75)},
+        "tab-bg": {"light": _tone(primary_hex, 95), "dark": _tone(primary_hex, 18)},
+        "tab-fg": {"light": _tone(primary_hex, 40), "dark": _tone(primary_hex, 75)},
+        "neutral": {"light": "#292929", "dark": "#E6E5E6"},
+        "on-neutral": {"light": "#FFFFFF", "dark": "#1A191A"},
+    }
+
+
 def derive_seed(strategy, intake, references):
     """seed·폰트·아이콘·origin을 결정하는 단일 진입점. offline: token 즉시 적용, image/url은 보류."""
     references = references or []
@@ -307,6 +417,15 @@ def _build_body(intake, strategy, ux):
                  for n, t in (("lowest", 4), ("low", 10), ("base", 12), ("high", 17), ("highest", 22))},
     }
 
+    # 역할 토큰(명세 §2,§3): checked/tab/neutral은 brand-role(color.primary 출처 추적), active/menu-sel/danger-soft는 brand 무관(baseline).
+    roles = _role_tokens(primary)
+    for rk in ("checked", "tab-bg", "tab-fg", "neutral", "on-neutral"):
+        color["light"][rk] = push(f"color.light.{rk}", roles[rk]["light"], "color.primary")
+        color["dark"][rk] = push(f"color.dark.{rk}", roles[rk]["dark"], "color.primary")
+    for rk, vals in ROLE_FIXED.items():
+        color["light"][rk] = push(f"color.light.{rk}", vals["light"])
+        color["dark"][rk] = push(f"color.dark.{rk}", vals["dark"])
+
     # Semantic: state mapping (각자 tonal, 다크는 밝은 톤)
     state_mapping = []
     for state, sseed in SEM_SEEDS.items():
@@ -319,10 +438,16 @@ def _build_body(intake, strategy, ux):
         dark_v = push(f"color.dark.{state}", _tone_meeting_contrast(sval, 80, color["dark"]["surface"], +1)[0], bk)
         state_mapping.append({"state": state, "light": light_v, "dark": dark_v})
 
-    # Semantic: ui_intent
+    # Semantic: ui_intent — 색 역할 분리(명세 §2). 각 컴포넌트가 올바른 역할 토큰을 참조.
     ui_intent = [
-        {"intent": "primary", "light": color["light"]["primary"], "dark": color["dark"]["primary"]},
+        {"intent": "primary", "light": color["light"]["primary"], "dark": color["dark"]["primary"]},          # 주요버튼·로고
         {"intent": "secondary", "light": color["light"]["secondary"], "dark": color["dark"]["secondary"]},
+        {"intent": "checked", "light": color["light"]["checked"], "dark": color["dark"]["checked"]},            # 토글·체크
+        {"intent": "tab", "light": color["light"]["tab-bg"], "dark": color["dark"]["tab-bg"]},                  # 탭·라디오 선택
+        {"intent": "tab-fg", "light": color["light"]["tab-fg"], "dark": color["dark"]["tab-fg"]},
+        {"intent": "active", "light": color["light"]["active"], "dark": color["dark"]["active"]},               # 접속/온라인(success와 구분)
+        {"intent": "menu-sel", "light": color["light"]["menu-sel"], "dark": color["dark"]["menu-sel"]},         # 활성 메뉴
+        {"intent": "neutral", "light": color["light"]["neutral"], "dark": color["dark"]["neutral"]},            # 코랄 주요액션 대비
         {"intent": "destructive", "light": next(s["light"] for s in state_mapping if s["state"] == "danger"),
          "dark": next(s["dark"] for s in state_mapping if s["state"] == "danger")},
         {"intent": "disabled", "light": _tone(NEUTRAL_SEED, 80, neutral=True), "dark": _tone(NEUTRAL_SEED, 40, neutral=True)},
@@ -353,27 +478,22 @@ def _build_body(intake, strategy, ux):
         push(f"radius.{t}", v)
         radius.append({"token": t, "value": v})
 
-    # Component: 6종, 상태별 + 터치타겟 44px + elevation (토대, override 불가)
+    # Component: 명세 13종, 컴포넌트별 states(역할 토큰 참조) + 터치타겟 + uses_tokens. 토큰 키만 참조(하드코딩 색 금지).
     component = []
     for name in PRIMITIVES:
+        spec = COMPONENT_SPECS[name]
         component.append({
             "component": name,
-            "states": {
-                "enabled": {"bg": "color.light.primary" if name in ("button",) else "color.light.surface",
-                            "fg": "color.light.on-primary" if name in ("button",) else "color.light.on-surface"},
-                "hover": {"bg": "color.light.primary-container"},
-                "focus": {"outline": "color.light.outline"},
-                "disabled": {"bg": "ui_intent.disabled"},
-            },
-            "touch_target": "44x44px",
+            "states": spec["states"],
+            "touch_target": "44x44px" if name in INTERACTIVE else "-",
             "elevation": "surface-container",
-            "uses_tokens": ["color.light.primary", "color.light.surface", "color.light.outline", "radius.r-md", "spacing.sp-2"],
+            "uses_tokens": spec["uses_tokens"],
         })
 
     governance = {
         "accessibility": {"min_touch_target": "44x44px", "contrast": "WCAG AA 4.5:1",
                           "min_input_height": "44px", "min_text_size": "11px"},
-        "interaction": {"states": ["enabled", "hover", "focus", "disabled"]},
+        "interaction": {"states": ["enabled", "hover", "focus", "disabled", "selected", "checked", "on", "off"]},
         "responsiveness": {"modes": ["light", "dark"], "dynamic_color": False},
     }
     # G20: 근거 없는 레이어는 open_questions
@@ -438,7 +558,7 @@ def validate(body: dict) -> dict:
     # E12: 컴포넌트 6종 구조 보존(발명 금지)
     comps = [c["component"] for c in body["component"]]
     if set(comps) != set(PRIMITIVES):
-        raise ValueError(f"컴포넌트 6종 불변 위반: {comps} (기대 {list(PRIMITIVES)})")
+        raise ValueError(f"컴포넌트 13종 불변 위반: {comps} (기대 {list(PRIMITIVES)})")
 
     # 접근성 토대(터치타겟 44px·WCAG) 불변
     acc = body["governance"].get("accessibility", {})

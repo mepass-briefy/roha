@@ -15,6 +15,7 @@ sys.path.insert(0, str(BASE)); sys.path.insert(0, str(BASE / "agents"))
 import backend as backend_agent
 import wireframe as wireframe_agent
 import features as features_agent
+import design_system as ds_agent
 import gate_review
 
 TMP = BASE / "_run_gatelevels"
@@ -135,6 +136,38 @@ for f in fc["features"]:
 rfc = gate("features", fc); show("(c) 수용기준 빈약", rfc)
 print("  -> WARN:", [w for w in rfc["warnings"] if "[품질]" in w][:3])
 assert rfc["status"] == "WARN" and not rfc["reasons"], "빈약 features는 WARN(통과)이어야 함"
+
+print("\n=== design_system 게이트 레벨(311f7e7 틀 동일) ===")
+good_ds = ds_agent.produce({"intake": {"references": [
+    {"reference_id": "roha", "type": "token", "value": {"color.primary": "#3F51B5"}, "source": "brand"}]},
+    "strategy": {}, "ux": {}})
+print("\n--- [6/7/8] 회귀: 정상 design_system은 ERROR 0 ---")
+gds = gate("design_system", good_ds); show("design_system(인디고)", gds)
+print("  component 13종:", len(good_ds["component"]), "| WARN 예:", [w for w in gds["warnings"] if w.startswith("[")][:2])
+assert gds["status"] != "FAIL", "정상 design_system이 FAIL이면 안 됨"
+assert len(good_ds["component"]) == 13, "컴포넌트 13종이어야 함"
+
+print("\n--- [7] 음성 2종(design_system) -> 각각 FAIL ---")
+# (a) 빈 component
+da = copy.deepcopy(good_ds); da["component"] = []
+rda = gate("design_system", da); show("(a) component=[]", rda)
+assert rda["status"] == "FAIL" and has_tag(rda, "[빈 산출]")
+# (b) 하드코딩 색(토큰 대신 hex)
+db = copy.deepcopy(good_ds)
+db["component"][0]["states"]["enabled"]["bg"] = "#FF0000"
+rdb = gate("design_system", db); show("(b) 하드코딩 색", rdb)
+assert rdb["status"] == "FAIL" and has_tag(rdb, "[하드코딩 색]")
+
+print("\n--- [6] 색 역할 토큰 참조 확인(토글->checked, 탭->tab, 사이드바->menu-sel) ---")
+cmap = {c["component"]: c for c in good_ds["component"]}
+tog = cmap["toggle"]["states"]["on"]["bg"]; tab = cmap["tab"]["states"]["active"]
+side = cmap["sidebar"]["states"]["nav-active"]["bg"]
+print("  toggle.on.bg =", tog, "| tab.active =", tab, "| sidebar.nav-active.bg =", side)
+assert tog == "color.light.checked", "토글은 checked 참조"
+assert tab["bg"] == "color.light.tab-bg" and tab["fg"] == "color.light.tab-fg", "탭은 tab-bg/tab-fg 참조"
+assert side == "color.light.menu-sel", "사이드바 활성메뉴는 menu-sel 참조"
+print("  역할 토큰 값(인디고): checked =", good_ds["foundation"]["color"]["light"]["checked"],
+      "| active =", good_ds["foundation"]["color"]["light"]["active"])
 
 shutil.rmtree(TMP)
 print("\nDONE")

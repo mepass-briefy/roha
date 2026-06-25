@@ -200,3 +200,47 @@ if os.environ.get("DESIGN_SYSTEM_MODE") == "real":
           "| tokens 수:", len(rb["tokens"]))
     assert aa_ok, "real seed에서도 WCAG AA 유지돼야 함"
     print("[real] 검증 통과(엔진 결정적 토큰 + WCAG 유지)")
+
+
+# ── [6][8] 13종 컴포넌트 + 색역할 + 두 테마 + 결정성 ──
+from orchestrator import canonical_hash
+print("\n=== 13종 컴포넌트 + 색 역할 토큰 ===")
+def make(seed):
+    return ds.produce({"intake": {"references": [
+        {"reference_id": "r", "type": "token", "value": {"color.primary": seed}, "source": "brand"}]},
+        "strategy": {}, "ux": {}})
+
+indigo = make("#3F51B5")
+coral = make("#FF5E5E")
+print("component 수:", len(indigo["component"]), "(13 기대):", [c["component"] for c in indigo["component"]])
+assert len(indigo["component"]) == 13
+cmap = {c["component"]: c for c in indigo["component"]}
+print("toggle->checked:", cmap["toggle"]["states"]["on"]["bg"] == "color.light.checked")
+print("checkbox->checked:", cmap["checkbox"]["states"]["checked"]["bg"] == "color.light.checked")
+print("tab->tab-bg/fg:", cmap["tab"]["states"]["active"] == {"bg": "color.light.tab-bg", "fg": "color.light.tab-fg"})
+print("sidebar nav-active->menu-sel:", cmap["sidebar"]["states"]["nav-active"]["bg"] == "color.light.menu-sel")
+print("profile active->active:", cmap["profile"]["states"]["active"]["dot"] == "color.light.active")
+print("button 5종:", sorted(set(cmap["button"]["states"]) & {"primary", "neutral", "outline", "danger", "danger-soft"}))
+
+print("\n=== 두 테마 역할 토큰(명세 일치) ===")
+for nm, b, exp in [("인디고", indigo, {"checked": "#51C0FF", "tab-bg": "#EDF9FF", "tab-fg": "#1056BD", "neutral": "#292929"}),
+                   ("코랄", coral, {"checked": "#FF5E5E", "tab-bg": "#FFEFEF", "tab-fg": "#FF5E5E", "neutral": "#292F45"})]:
+    cl = b["foundation"]["color"]["light"]
+    got = {k: cl[k] for k in exp}
+    print(f"  {nm}: {got} | active={cl['active']} menu-sel={cl['menu-sel']}")
+    assert got == exp, f"{nm} 역할 토큰 불일치"
+    assert cl["active"] == "#10A957", "active는 brand 무관 #10A957"
+
+print("\n=== 두 테마 의미색 WCAG AA(엔진 보장) ===")
+for nm, b in [("인디고", indigo), ("코랄", coral)]:
+    ok = all(ds._contrast(b["foundation"]["color"][m][f"on-{s}"], b["foundation"]["color"][m][s]) >= ds.WCAG_AA
+             and ds._contrast(b["foundation"]["color"][m][s], b["foundation"]["color"][m]["surface"]) >= ds.WCAG_AA
+             for s in ds.SEMANTIC_FAMILY for m in ("light", "dark"))
+    print(f"  {nm} 의미색 4토큰 AA:", ok)
+    assert ok
+
+print("\n=== [8] 토큰 엔진 결정성(같은 seed -> 같은 토큰) ===")
+h1, h2 = canonical_hash(make("#3F51B5")), canonical_hash(make("#3F51B5"))
+print("  동일 seed 재실행 canonical_hash 동일:", h1 == h2)
+assert h1 == h2, "결정성 위반"
+print("\n[6][8] 검증 통과")
