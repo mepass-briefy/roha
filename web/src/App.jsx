@@ -8,11 +8,8 @@ const IconFolder = () => (
 const IconPlus = () => (
   <svg className="ico" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" /></svg>
 );
-const IconSun = () => (
-  <svg className="ico" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4" /><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" /></svg>
-);
-const IconMoon = () => (
-  <svg className="ico" viewBox="0 0 24 24"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z" /></svg>
+const IconLogout = () => (
+  <svg className="ico" viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9" /></svg>
 );
 
 const NODE_LABELS = {
@@ -267,14 +264,19 @@ export default function App() {
   const [reqs, setReqs] = useState("");
   const [platform, setPlatform] = useState("미정");
 
-  // 테마: index.html이 초기 data-theme를 이미 설정함. 여기선 그 값을 읽어 토글/저장만.
-  const [theme, setTheme] = useState(() =>
-    (typeof document !== "undefined" && document.documentElement.getAttribute("data-theme")) || "light");
-  const toggleTheme = () => {
-    const next = theme === "dark" ? "light" : "dark";
-    document.documentElement.setAttribute("data-theme", next);
-    try { localStorage.setItem("roha-theme", next); } catch { /* noop */ }
-    setTheme(next);
+  // 테마(brand: indigo|red) + 모드(light|dark). index.html이 초기값 설정. 토글 시 data-theme/data-mode + localStorage.
+  const [theme, setTheme] = useState(() => document.documentElement.getAttribute("data-theme") || "indigo");
+  const [mode, setMode] = useState(() => (document.documentElement.getAttribute("data-mode") === "dark" ? "dark" : "light"));
+  const applyTheme = (t) => {
+    document.documentElement.setAttribute("data-theme", t);
+    try { localStorage.setItem("roha-theme", t); } catch { /* noop */ }
+    setTheme(t);
+  };
+  const applyMode = (m) => {
+    if (m === "dark") document.documentElement.setAttribute("data-mode", "dark");
+    else document.documentElement.removeAttribute("data-mode");
+    try { localStorage.setItem("roha-mode", m); } catch { /* noop */ }
+    setMode(m);
   };
 
   async function withBusy(fn) { setError(null); setBusy(true); try { await fn(); } catch (e) { setError(String(e.message || e)); } finally { setBusy(false); } }
@@ -301,23 +303,44 @@ export default function App() {
   return (
     <div className="layout">
       <aside className="sidebar">
-        <div className="brand"><span className="mark" />ROHA</div>
-        <button className={`nav-btn ${view === "list" ? "active" : ""}`} onClick={() => setView("list")}><IconFolder />프로젝트</button>
-        <button className={`nav-btn ${view === "new" ? "active" : ""}`} onClick={() => { setView("new"); setPk(null); setNode(null); }}><IconPlus />새 프로젝트</button>
-        {pk && view === "node" && (
-          <>
-            <div className="sec-label">단계 — {statusData?.business_key || ""}</div>
-            {nodes.map((n, i) => (
-              <button key={n.node} className={`nav-btn ${node === n.node ? "active" : ""}`} onClick={() => setNode(n.node)}>
-                <span className="num">{i + 1}</span><span className={`dot ${n.status || ""}`} /><span>{NODE_LABELS[n.node] || n.node}</span>
-              </button>
-            ))}
-          </>
-        )}
-        <button className="theme-toggle" onClick={toggleTheme}>
-          {theme === "dark" ? <IconSun /> : <IconMoon />}
-          {theme === "dark" ? "라이트 모드" : "다크 모드"}
-        </button>
+        <div className="sb-top">
+          <div className="brand"><div className="mark">R</div><div className="nm">ROHA</div></div>
+          <div className="nav">
+            <button className={`nav-btn ${view === "list" ? "active" : ""}`} onClick={() => setView("list")}><IconFolder />프로젝트</button>
+            <button className={`nav-btn ${view === "new" ? "active" : ""}`} onClick={() => { setView("new"); setPk(null); setNode(null); }}><IconPlus />새 프로젝트</button>
+            {pk && view === "node" && (
+              <>
+                <div className="sec-label">단계 — {statusData?.business_key || ""}</div>
+                {nodes.map((n, i) => (
+                  <button key={n.node} className={`nav-btn ${node === n.node ? "active" : ""}`} onClick={() => setNode(n.node)}>
+                    <span className="num">{i + 1}</span><span className={`dot ${n.status || ""}`} /><span>{NODE_LABELS[n.node] || n.node}</span>
+                  </button>
+                ))}
+              </>
+            )}
+          </div>
+        </div>
+        <div className="sb-bottom">
+          <div>
+            <div className="seg-label">테마</div>
+            <div className="seg">
+              <button className={theme === "indigo" ? "on" : ""} onClick={() => applyTheme("indigo")}>인디고</button>
+              <button className={theme === "red" ? "on" : ""} onClick={() => applyTheme("red")}>코랄</button>
+            </div>
+          </div>
+          <div>
+            <div className="seg-label">모드</div>
+            <div className="seg">
+              <button className={mode === "light" ? "on" : ""} onClick={() => applyMode("light")}>라이트</button>
+              <button className={mode === "dark" ? "on" : ""} onClick={() => applyMode("dark")}>다크</button>
+            </div>
+          </div>
+          <div className="profile">
+            <div className="pf-av">R<span className="pf-active" /></div>
+            <div><div className="pf-name">ROHA</div><div className="pf-mail">Workbench</div></div>
+          </div>
+          <button className="logout" title="인증은 아직 미구현입니다"><IconLogout />로그아웃</button>
+        </div>
       </aside>
 
       <main className="main">

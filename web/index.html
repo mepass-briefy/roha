@@ -4,15 +4,22 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>ROHA Workbench</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.css" />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap" />
     <script>
-      // 초기 테마(깜빡임 방지): 저장값 우선, 없으면 OS 설정.
+      // 초기 테마/모드(깜빡임 방지): brand=indigo|red(저장값 우선, 기본 indigo), mode=저장값 우선·없으면 OS.
       (function () {
         try {
-          var saved = localStorage.getItem("roha-theme");
-          var theme = saved || (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
-          document.documentElement.setAttribute("data-theme", theme);
+          var brand = localStorage.getItem("roha-theme");
+          if (brand !== "indigo" && brand !== "red") brand = "indigo";
+          document.documentElement.setAttribute("data-theme", brand);
+          var mode = localStorage.getItem("roha-mode");
+          if (mode !== "light" && mode !== "dark") {
+            mode = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+          }
+          if (mode === "dark") document.documentElement.setAttribute("data-mode", "dark");
         } catch (e) {
-          document.documentElement.setAttribute("data-theme", "light");
+          document.documentElement.setAttribute("data-theme", "indigo");
         }
       })();
     </script>
