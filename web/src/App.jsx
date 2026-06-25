@@ -189,8 +189,8 @@ function RecordBody({ rec, pk, onSaved }) {
   return <StructuredView body={rec.body} />;
 }
 
-function ProjectList({ onOpen }) {
-  const [tab, setTab] = useState("active");
+function ProjectList({ onOpen, tab }) {
+  // tab(active|done)은 사이드바 2depth 메뉴가 제어(탭 아님). 워크벤치는 진행 중에 초점, 완료는 아카이브.
   const [sort, setSort] = useState("recent");
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
@@ -213,11 +213,8 @@ function ProjectList({ onOpen }) {
 
   return (
     <div className="card">
-      <h2>프로젝트</h2>
-      <div className="tabs">
-        <button className={`tab ${tab === "active" ? "active" : ""}`} onClick={() => setTab("active")}>진행 중</button>
-        <button className={`tab ${tab === "done" ? "active" : ""}`} onClick={() => setTab("done")}>완료</button>
-      </div>
+      <h2>{tab === "done" ? "완료 (아카이브)" : "진행 중 프로젝트"}</h2>
+      <div className="sub">{tab === "done" ? "완료된 프로젝트 보관함입니다." : "진행 중인 프로젝트입니다. 멈춘 작업을 이어서 진행하세요."}</div>
       <div className="toolbar">
         <label>정렬</label>
         <select value={sort} onChange={(e) => setSort(e.target.value)}>
@@ -268,6 +265,7 @@ function ProjectList({ onOpen }) {
 
 export default function App() {
   const [view, setView] = useState("new");   // 홈=새 프로젝트 고정. list | new | node
+  const [listTab, setListTab] = useState("active");  // 프로젝트 2depth: active(진행 중) | done(완료/아카이브)
   const [pk, setPk] = useState(null);
   const [statusData, setStatusData] = useState(null);
   const [records, setRecords] = useState([]);
@@ -319,8 +317,15 @@ export default function App() {
         <div className="sb-top">
           <div className="brand"><div className="mark">R</div><div className="nm">ROHA</div></div>
           <div className="nav">
-            <button className={`nav-btn ${view === "list" ? "active" : ""}`} onClick={() => setView("list")}><IconFolder />프로젝트</button>
+            {/* 1) 홈 = 새 프로젝트(최상위) */}
             <button className={`nav-btn ${view === "new" ? "active" : ""}`} onClick={() => { setView("new"); setPk(null); setNode(null); }}><IconPlus />새 프로젝트</button>
+            {/* 2) 프로젝트 — 2depth(진행 중 / 완료). 탭 아님, 메뉴로 분리. 진행 중에 초점, 완료는 아카이브. */}
+            <div className="nav-group">
+              <div className="nav-group-label"><IconFolder />프로젝트</div>
+              <button className={`nav-btn nav-sub ${view === "list" && listTab === "active" ? "active" : ""}`} onClick={() => { setListTab("active"); setView("list"); setPk(null); setNode(null); }}>진행 중</button>
+              <button className={`nav-btn nav-sub ${view === "list" && listTab === "done" ? "active" : ""}`} onClick={() => { setListTab("done"); setView("list"); setPk(null); setNode(null); }}>완료</button>
+            </div>
+            {/* 3) 프로젝트 열람 시 단계 네비 */}
             {pk && view === "node" && (
               <>
                 <div className="sec-label">단계 — {statusData?.business_key || ""}</div>
@@ -345,7 +350,7 @@ export default function App() {
       </aside>
 
       <main className="main">
-        {view === "list" && <ProjectList onOpen={openProject} />}
+        {view === "list" && <ProjectList onOpen={openProject} tab={listTab} />}
 
         {view === "new" && (
           <div className="card">
@@ -360,7 +365,7 @@ export default function App() {
             <label>디바이스 <span className="opt">(선택, 복수 가능 · 나중에 확정 가능)</span></label>
             <div className="cb-list">
               {DEVICES.map((d) => (
-                <div key={d.key} className="cb-row" onClick={() => toggleDevice(d.key)}>
+                <div key={d.key} className={`cb-row ${devices.includes(d.key) ? "sel" : ""}`} onClick={() => toggleDevice(d.key)}>
                   <span className={`cb ${devices.includes(d.key) ? "on" : ""}`}>{devices.includes(d.key) && <IconCheck />}</span>
                   <span><span className="cb-name">{d.key}</span> <span className="cb-desc">{d.desc}</span></span>
                 </div>

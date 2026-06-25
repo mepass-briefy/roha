@@ -76,6 +76,11 @@ body { margin:0; font-family:var(--font); background:var(--bg); color:var(--text
 .nav-btn .dot { width:7px; height:7px; border-radius:50%; background:var(--text-3); flex:none; opacity:.5; }
 .nav-btn .dot.confirmed { background:var(--active); opacity:1; }
 .nav-btn .dot.in_review { background:var(--warning); opacity:1; }
+/* 2depth: 프로젝트 그룹 라벨 + 들여쓴 하위(진행 중 / 완료) */
+.nav-group { margin-top:4px; }
+.nav-group-label { display:flex; align-items:center; gap:11px; padding:9px 12px; font-size:13.5px; font-weight:600; color:var(--text-2); }
+.nav-group-label .ico { width:17px; height:17px; }
+.nav-sub { padding-left:40px; font-size:13px; }
 
 /* 프로필 / 로그아웃 */
 .profile { display:flex; align-items:center; gap:10px; padding:2px 6px; }
@@ -116,10 +121,14 @@ input:focus, textarea:focus, select:focus { border-color:var(--primary); }
 ::placeholder { color:var(--text-3); opacity:1; }
 .hint { font-size:12px; color:var(--text-3); margin-top:2px; }
 
-/* 체크박스(디바이스 복수 선택) — 명세: 18px, radius 5px, checked=checked색 + 흰 체크 */
-.cb-list { display:flex; flex-direction:column; gap:2px; }
-.cb-row { display:flex; align-items:center; gap:11px; padding:9px 4px; cursor:pointer; border-radius:var(--r-sm); }
+/* 체크박스(디바이스 복수 선택) — 명세: 18px, radius 5px, checked=checked색 + 흰 체크.
+   UX 원칙: 체크박스는 기본 '가로 배열(증설형)'. 짧고 동등한 선택지는 가로로 나열해 한눈에 비교하고,
+   옵션이 늘면 줄바꿈(wrap)으로 증설한다. 세로 배열은 항목 설명이 길거나 명시적 세로 리스트가 필요할 때만. */
+.cb-list { display:flex; flex-wrap:wrap; gap:10px; }
+.cb-row { display:inline-flex; align-items:center; gap:10px; padding:11px 14px; cursor:pointer;
+  border:.5px solid var(--line-strong); border-radius:var(--r-md); background:var(--bg); }
 .cb-row:hover { background:var(--raised); }
+.cb-row.sel { border-color:var(--checked); }
 .cb { width:18px; height:18px; border-radius:5px; border:1.5px solid var(--text-3); flex:none;
   display:flex; align-items:center; justify-content:center; }
 .cb.on { background:var(--checked); border-color:var(--checked); }
