@@ -53,6 +53,8 @@ def build_producers(art_dir: Path):
     strat_llm = strategy_agent.real_llm if os.environ.get("STRATEGY_MODE") == "real" else strategy_agent.offline_llm
     ux_llm = ux_agent.real_llm if os.environ.get("UX_MODE") == "real" else ux_agent.offline_llm
     sec_llm = security_agent.real_llm if os.environ.get("SECURITY_MODE") == "real" else security_agent.offline_llm
+    ds_llm = ds_agent.real_llm if os.environ.get("DESIGN_SYSTEM_MODE") == "real" else ds_agent.offline_llm
+    wf_llm = wireframe_agent.real_llm if os.environ.get("WIREFRAME_MODE") == "real" else wireframe_agent.offline_llm
     if os.environ.get("FEATURES_MODE") == "real":
         feat_llm = features_agent.make_real_llm(use_search=(os.environ.get("FEATURES_SEARCH") == "on"))
     else:
@@ -61,9 +63,9 @@ def build_producers(art_dir: Path):
         "strategy": strategy_agent.make_producer(strat_llm),
         "ux": ux_agent.make_producer(ux_llm),
         "security": security_agent.make_producer(sec_llm),
-        "design_system": ds_agent.make_producer(),
+        "design_system": ds_agent.make_producer(ds_llm),
         "features": features_agent.make_producer(feat_llm),
-        "wireframe": wireframe_agent.make_producer(),
+        "wireframe": wireframe_agent.make_producer(wf_llm),
         "backend": backend_agent.make_producer(artifact_dir=art_dir),
         "frontend": frontend_agent.make_producer(artifact_dir=art_dir),
     }

@@ -11,9 +11,31 @@ derive_seed(strategy, intake, references)가 seed·폰트·아이콘·origin 단
 """
 
 import json
+import os
+import re
 from pathlib import Path
 
+try:
+    from dotenv import load_dotenv
+    load_dotenv(Path(__file__).resolve().parent.parent / ".env")
+except ImportError:
+    pass
+
 AGENT_NAME = "agent.design_system"
+REAL_MODEL_DEFAULT = "claude-sonnet-4-6"
+_HEX_RE = re.compile(r"^#[0-9A-Fa-f]{6}$")
+
+# real 모드 지시: brand seed(색)만 결정. 토큰 계산(_tone/surface/의미색/WCAG)은 결정적 엔진이 수행.
+SEED_INSTRUCTION = (
+    "\n\n## real 모드 지시(brand seed 결정만 — 토큰 계산은 엔진이 한다)\n"
+    "너의 임무는 '어떤 brand 색이 맞는가'를 정하는 것뿐이다. 색조·명도 단계·surface·의미색·WCAG 대비 계산은 결정적 엔진이 수행하므로 너는 seed만 정한다.\n"
+    "입력의 strategy(positioning·톤), discovery(goal_interpretation·목표 성격), references를 보고 제품 성격에 맞는 brand primary 색(hex)을 정한다.\n"
+    "1. references에 image/url이 있으면 그 메타(파일명·url·설명)와 제품 맥락에서 brand 색을 추론한다(source는 \"reference-image\" 또는 \"reference-url\", source_reference_id는 해당 reference_id).\n"
+    "2. 쓸만한 reference가 없으면 strategy·discovery 성격에서 적절한 색을 추론한다(예: 신뢰·금융 성격이면 차분한 블루/인디고, 활기·소셜이면 따뜻한 색). source는 \"inference\".\n"
+    "3. 출력은 JSON 하나만: {\"primary\":\"#RRGGBB\", \"secondary\":\"#RRGGBB 또는 null\", \"font_family\":\"... 또는 null\", "
+    "\"source\":\"reference-image|reference-url|inference\", \"source_reference_id\":\"... 또는 null\", \"rationale\":\"왜 이 색인가\"}. "
+    "primary는 반드시 #RRGGBB 6자리 hex. 설명 텍스트·코드펜스 금지."
+)
 SYSTEM_PROMPT = Path(__file__).with_name("agent_design_system.md").read_text(encoding="utf-8")
 
 # B6: baseline 고정 세트(추론이 아니라 정해진 fallback)
@@ -204,8 +226,10 @@ def _origin_for(brand_key, applied):
     return "baseline", None
 
 
-def build_user_prompt(intake, strategy, ux):
-    return json.dumps({"intake": intake, "strategy": strategy, "ux": ux}, ensure_ascii=False)
+def build_user_prompt(intake, strategy, ux, discovery=None):
+    disc = {k: (discovery or {}).get(k) for k in
+            ("goal_interpretation", "requirement_normalization", "proposed_requirements")}
+    return json.dumps({"intake": intake, "strategy": strategy, "ux": ux, "discovery": disc}, ensure_ascii=False)
 
 
 # ---------------- 산출 빌드 ----------------
@@ -433,18 +457,86 @@ def offline_llm(system: str, user: str) -> str:
     return json.dumps(body, ensure_ascii=False)
 
 
+def _extract_json(text: str) -> str:
+    text = text.replace("```json", "").replace("```", "").strip()
+    i, j = text.find("{"), text.rfind("}")
+    return text[i:j + 1] if i != -1 and j != -1 and j > i else text
+
+
+def make_real_llm(model=REAL_MODEL_DEFAULT, max_tokens=1024):
+    """real llm(system, user) -> str. Claude는 brand seed(색)만 결정하고, 토큰은 결정적 엔진(_build_body)이 생성한다.
+    실패(SDK 미설치/키 없음/네트워크/API 에러/형식 오류)는 RuntimeError — produce에서 offline 폴백."""
+    def real_llm(system: str, user: str) -> str:
+        try:
+            import anthropic
+        except ImportError as e:
+            raise RuntimeError("real 모드 불가: anthropic SDK 미설치") from e
+        api_key = os.environ.get("ANTHROPIC_API_KEY")
+        if not api_key:
+            raise RuntimeError("real 모드 불가: ANTHROPIC_API_KEY 없음")
+        payload = json.loads(user)
+        intake = dict(payload.get("intake", {}) or {})
+        strategy = payload.get("strategy", {}) or {}
+        ux = payload.get("ux", {}) or {}
+        discovery = payload.get("discovery", {}) or {}
+        # 1) Claude에게 seed만 묻는다(strategy·discovery·references 맥락).
+        seed_user = json.dumps({"strategy": strategy, "discovery": discovery,
+                                "references": intake.get("references", [])}, ensure_ascii=False)
+        client = anthropic.Anthropic(api_key=api_key)
+        try:
+            resp = client.messages.create(model=model, max_tokens=max_tokens,
+                                          system=system + SEED_INSTRUCTION,
+                                          messages=[{"role": "user", "content": seed_user}])
+        except Exception as e:
+            raise RuntimeError(f"real 모드 Anthropic API 호출 실패: {type(e).__name__}: {e}") from e
+        text = "".join(b.text for b in resp.content if getattr(b, "type", None) == "text").strip()
+        try:
+            seed = json.loads(_extract_json(text))
+        except Exception as e:
+            raise RuntimeError(f"real seed JSON 파싱 실패: {e}") from e
+        primary = (seed.get("primary") or "").strip()
+        if not _HEX_RE.match(primary):
+            raise RuntimeError(f"real seed primary hex 형식 오류: '{primary}'")
+        # 2) 결정적 엔진에 주입: seed를 합성 reference token으로 넣어 _build_body가 토큰을 WCAG 보장·결정적으로 생성.
+        value = {"color.primary": primary}
+        if seed.get("secondary") and _HEX_RE.match(str(seed["secondary"])):
+            value["color.secondary"] = seed["secondary"]
+        if seed.get("font_family"):
+            value["font.family"] = seed["font_family"]
+        ref_id = seed.get("source_reference_id") or f"real-seed:{seed.get('source', 'inference')}"
+        refs = list(intake.get("references", []) or [])
+        refs.append({"reference_id": ref_id, "type": "token", "value": value,
+                     "source": f"real:{seed.get('source', 'inference')}"})
+        intake["references"] = refs
+        body = _build_body(intake, strategy, ux)
+        # seed 결정 근거 표시(토큰 무변경; 표시용 필드만 덧붙임)
+        if isinstance(body.get("seed"), dict):
+            body["seed"]["rationale"] = seed.get("rationale")
+            body["seed"]["decided_source"] = seed.get("source")
+        return json.dumps(body, ensure_ascii=False)
+    return real_llm
+
+
+real_llm = make_real_llm()
+
+
 def produce(inputs: dict, llm=offline_llm) -> dict:
     intake = inputs["intake"]
     strategy = inputs.get("strategy", {})
     ux = inputs.get("ux", {})
-    raw = llm(SYSTEM_PROMPT, build_user_prompt(intake, strategy, ux))
+    discovery = inputs.get("discovery", {})  # v13: real seed 결정에 목표·전략 맥락 사용
+    up = build_user_prompt(intake, strategy, ux, discovery)
+    try:
+        raw = llm(SYSTEM_PROMPT, up)
+    except RuntimeError:
+        raw = offline_llm(SYSTEM_PROMPT, up)  # real 실패 -> offline 폴백
     raw = raw.replace("```json", "").replace("```", "").strip()
     body = json.loads(raw)
     return validate(body)
 
 
 def make_producer(llm=offline_llm):
-    """orchestrator에 등록할 producer(inputs)->body 클로저. llm 주입은 클로저로 처리(구조 변경 없음)."""
+    """orchestrator에 등록할 producer(inputs)->body 클로저. mock: make_producer(). real: make_producer(real_llm)."""
     def producer(inputs):
         return produce(inputs, llm=llm)
     return producer

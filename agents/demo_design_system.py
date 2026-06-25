@@ -3,7 +3,7 @@ Design System Agent(재정의) 검증.
 Material 3 tonal + Reference Contract + Traceability + Conflict/Whitelist/WCAG + 게이트.
 오프라인 모드(결정적). orchestrator·다른 에이전트·게이트는 수정하지 않는다.
 """
-import sys, json
+import os, sys, json
 from pathlib import Path
 
 BASE = Path(__file__).resolve().parent.parent
@@ -169,3 +169,34 @@ print("  의미색 추가 토큰 수(success/warning/danger × 6 신규키):",
       sum(1 for k in keys if any(k.startswith(f"color.{m}.on-{n}") or k.startswith(f"color.{m}.{n}-container")
                                  for m in ("light", "dark") for n in ds.SEMANTIC_FAMILY)))
 print("\nDONE")
+
+
+# ── [real] real이 도출한 seed로 토큰 생성(엔진 결정적·WCAG 유지). DESIGN_SYSTEM_MODE=real일 때만 ──
+if os.environ.get("DESIGN_SYSTEM_MODE") == "real":
+    print("\n=== [real] strategy·discovery 맥락에서 brand seed 도출 -> 엔진 토큰 생성 ===")
+    R_INTAKE = {"site_character": "인플루언서 캠페인 관리", "requirements": ["계약금", "정산", "검증"], "references": []}
+    R_STRATEGY = {"positioning": "광고주·인플루언서 신뢰 기반 매칭·정산 플랫폼",
+                  "options": [{"label": "신뢰·투명성 중심"}]}
+    R_DISCOVERY = {"goal_interpretation": {"inferred_dimensions": [{"dimension": "정산 신뢰", "basis": "goal"}],
+                                           "candidate_metrics": [], "assumptions": []},
+                   "requirement_normalization": [{"id": "R-01", "statement": "국내외 정산", "origin": "explicit"}],
+                   "proposed_requirements": []}
+    rb = ds.produce({"intake": R_INTAKE, "strategy": R_STRATEGY, "ux": {}, "discovery": R_DISCOVERY},
+                    llm=ds.real_llm)
+    seed = rb["seed"]
+    print("real 도출 seed.primary:", seed.get("primary"), "| decided_source:", seed.get("decided_source"))
+    print("rationale:", seed.get("rationale"))
+    print("baseline(#6750A4)과 다른가(real이 결정):", seed.get("primary") != ds.BASELINE_SEED)
+    # 토큰 결정적·WCAG 유지: light 의미색 4토큰 AA 확인
+    aa_ok = True
+    for name in ds.SEMANTIC_FAMILY:
+        for mode in ("light", "dark"):
+            cm = rb["foundation"]["color"][mode]
+            c1 = ds._contrast(cm[f"on-{name}"], cm[name])
+            c2 = ds._contrast(cm[name], cm["surface"])
+            aa_ok = aa_ok and c1 >= ds.WCAG_AA and c2 >= ds.WCAG_AA
+    print("의미색 4토큰 WCAG AA(엔진 보장) 유지:", aa_ok)
+    print("primary 토큰 생성됨:", rb["foundation"]["color"]["light"]["primary"],
+          "| tokens 수:", len(rb["tokens"]))
+    assert aa_ok, "real seed에서도 WCAG AA 유지돼야 함"
+    print("[real] 검증 통과(엔진 결정적 토큰 + WCAG 유지)")

@@ -11,21 +11,44 @@ ux 정보구조의 화면을 핵심(fact)으로, 섹션 배치·컴포넌트 선
 """
 
 import json
+import os
 from pathlib import Path
+
+try:
+    from dotenv import load_dotenv
+    load_dotenv(Path(__file__).resolve().parent.parent / ".env")
+except ImportError:
+    pass
 
 AGENT_NAME = "agent.wireframe"
 SYSTEM_PROMPT = Path(__file__).with_name("agent_wireframe.md").read_text(encoding="utf-8")
 
 CORE_ORIGINS = ("fact", "human")
 ALLOWED_ORIGINS = ("fact", "human", "inference")
+REAL_MODEL_DEFAULT = "claude-sonnet-4-6"
 
 # 기능 성격별 컴포넌트 선호(결정적). 실제 사용은 palette 교집합으로 제한한다.
 INPUT_KEYWORDS = ("신청", "예약", "작성", "등록", "입력")
 LIST_KEYWORDS = ("확인", "조회", "목록", "정산", "내역")
 
+# real 모드 지시: 기능별 화면 구성(빈 화면 금지). 검색 없음(추론).
+REAL_MODE_INSTRUCTION = (
+    "\n\n## real 모드 지시(기능별 화면 구성 — 빈 화면 금지)\n"
+    "1. features.features의 각 기능과 ux.user_flows·information_architecture를 받아, 그 기능이 사용자에게 완결되려면 필요한 화면·섹션·navigation을 구성한다. "
+    "기능마다 필요한 화면이 다르다 — 모든 기능에 같은 화면 틀을 붙이는 고정 레이아웃 금지.\n"
+    "2. 빈 화면 금지: features에 기능이 있으면 screens는 절대 비어선 안 된다. 핵심(fact) 기능은 반드시 대응 화면을 가진다. "
+    "ux.information_architecture가 비어 있어도 features에서 화면을 도출한다.\n"
+    "3. discovery(goal_interpretation·requirement_normalization)를 참고해 목표 달성에 핵심인 화면을 우선·명확히 배치한다.\n"
+    "4. 발명 금지: 각 screen의 source는 핵심이면 \"ux:<화면>\" 또는 \"feature:<기능>\"(origin fact|human), 파생이면 \"derived:<근거>\"(origin inference). "
+    "섹션의 components는 design_system.component_specs(palette) 안에서만, feature_refs는 features.features 안에서만 참조한다(없는 것 발명 금지).\n"
+    "5. provenance: design_component_palette=\"fact\", feature_index=\"fact\", screens=\"per_item\", sections=\"inference\", navigation=\"inference\". "
+    "body에 \"open_questions\": [] 포함. 출력은 출력 스키마의 JSON 객체 하나만(설명 텍스트·코드펜스 금지)."
+)
 
-def build_user_prompt(features: dict, design_system: dict, ux: dict) -> str:
-    return json.dumps({"features": features, "design_system": design_system, "ux": ux},
+
+def build_user_prompt(features: dict, design_system: dict, ux: dict, discovery=None) -> str:
+    disc = {k: (discovery or {}).get(k) for k in ("goal_interpretation", "requirement_normalization")}
+    return json.dumps({"features": features, "design_system": design_system, "ux": ux, "discovery": disc},
                       ensure_ascii=False)
 
 
@@ -170,18 +193,59 @@ def offline_llm(system: str, user: str) -> str:
     return json.dumps(body, ensure_ascii=False)
 
 
+def _extract_json(text: str) -> str:
+    text = text.replace("```json", "").replace("```", "").strip()
+    i, j = text.find("{"), text.rfind("}")
+    return text[i:j + 1] if i != -1 and j != -1 and j > i else text
+
+
+def make_real_llm(model=REAL_MODEL_DEFAULT, max_tokens=8192):
+    """real llm(system, user) -> str. Anthropic messages API(검색 없음, 추론).
+    실패(SDK 미설치/키 없음/네트워크/API 에러)는 RuntimeError — produce에서 offline 폴백."""
+    def real_llm(system: str, user: str) -> str:
+        try:
+            import anthropic
+        except ImportError as e:
+            raise RuntimeError("real 모드 불가: anthropic SDK 미설치") from e
+        api_key = os.environ.get("ANTHROPIC_API_KEY")
+        if not api_key:
+            raise RuntimeError("real 모드 불가: ANTHROPIC_API_KEY 없음")
+        client = anthropic.Anthropic(api_key=api_key)
+        try:
+            resp = client.messages.create(
+                model=model, max_tokens=max_tokens,
+                system=system + REAL_MODE_INSTRUCTION,
+                messages=[{"role": "user", "content": user}],
+            )
+        except Exception as e:
+            raise RuntimeError(f"real 모드 Anthropic API 호출 실패: {type(e).__name__}: {e}") from e
+        text = "".join(b.text for b in resp.content if getattr(b, "type", None) == "text").strip()
+        if not text:
+            raise RuntimeError("real 모드: Anthropic 응답에 텍스트 없음")
+        return _extract_json(text)
+    return real_llm
+
+
+real_llm = make_real_llm()
+
+
 def produce(inputs: dict, llm=offline_llm) -> dict:
     features = inputs["features"]
     design_system = inputs.get("design_system", {})
     ux = inputs.get("ux", {})
-    raw = llm(SYSTEM_PROMPT, build_user_prompt(features, design_system, ux))
+    discovery = inputs.get("discovery", {})  # v13: 목표·요구를 화면 구성에 반영(real 프롬프트)
+    up = build_user_prompt(features, design_system, ux, discovery)
+    try:
+        raw = llm(SYSTEM_PROMPT, up)
+    except RuntimeError:
+        raw = offline_llm(SYSTEM_PROMPT, up)  # real 실패 -> offline 폴백
     raw = raw.replace("```json", "").replace("```", "").strip()
     body = json.loads(raw)
     return validate(body)
 
 
 def make_producer(llm=offline_llm):
-    """orchestrator에 등록할 producer(inputs)->body 클로저. llm 주입은 클로저로 처리(구조 변경 없음)."""
+    """orchestrator에 등록할 producer(inputs)->body 클로저. mock: make_producer(). real: make_producer(real_llm)."""
     def producer(inputs):
         return produce(inputs, llm=llm)
     return producer

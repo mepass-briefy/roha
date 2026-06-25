@@ -33,8 +33,8 @@ import gate_review
 import run_harness  # build_producers 재사용(호출만)
 import discovery as discovery_agent
 
-# v12: discovery를 downstream(strategy·ux·security·features) depends_on에 연결(입력 전달). v11 보존.
-WF = json.loads((BASE / "workflow" / "site-build.v12.json").read_text(encoding="utf-8"))
+# v13: discovery를 design_system·wireframe depends_on에도 연결(2단계-B). v11/v12 보존.
+WF = json.loads((BASE / "workflow" / "site-build.v13.json").read_text(encoding="utf-8"))
 ART = BASE / "_run_server" / "artifacts"
 PRODUCERS = run_harness.build_producers(ART)
 # discovery producer 추가(run_harness.build_producers엔 없음). 로직 무수정, 등록만. DISCOVERY_MODE 따름.
