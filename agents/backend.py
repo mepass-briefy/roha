@@ -10,6 +10,7 @@ orchestrator 계약: producer(inputs: dict) -> body: dict
 """
 
 import json
+import os
 import re
 import hashlib
 from pathlib import Path
@@ -17,9 +18,16 @@ from typing import List, Optional, Any
 
 from pydantic import BaseModel, field_validator
 
+try:
+    from dotenv import load_dotenv
+    load_dotenv(Path(__file__).resolve().parent.parent / ".env")
+except ImportError:
+    pass
+
 AGENT_NAME = "agent.backend"
 SYSTEM_PROMPT = Path(__file__).with_name("agent_backend.md").read_text(encoding="utf-8")
 DEFAULT_ARTIFACT_DIR = Path(__file__).resolve().parent.parent / "_run_backend" / "artifacts"
+REAL_MODEL_DEFAULT = "claude-sonnet-4-6"
 
 # 고정 Response Contract (임의 변경 금지)
 RESPONSE_CONTRACT = {
@@ -40,6 +48,27 @@ CONTRACT_RULES = """## 계약 규칙(주입)
 9. 표준 case(200/201/204/400/401/403/404)는 메서드·권한에서 자동 도출(inference). 도메인 특수(409/202 등)는 근거 있을 때만, 없으면 open_questions.
 10. acceptance는 features.acceptance_criteria에서 매핑. 근거 없으면 open_questions.
 """
+
+# real 모드 지시(기능 기반 엔티티·API 설계 — 단발 1-pass. 반복·tool-use 루프 없음).
+REAL_MODE_INSTRUCTION = (
+    "\n\n## real 모드 지시(기능 기반 스키마·API 설계 — 단발 1-pass)\n"
+    "이 작업은 두 산출을 '모두' 내야 한다: (1) entities(데이터 모델) (2) api_spec.endpoints(API). "
+    "둘 중 하나라도 비면 실패다. 특히 entities는 절대 생략하지 말 것 — 입력 features에 핵심 기능이 있으면 entities는 반드시 1개 이상이다.\n"
+    "입력의 features(각 기능)·ux(플로우/화면)·discovery(목표·정규화 요구)를 받아, 그 기능이 실제로 동작하려면 필요한 "
+    "데이터 엔티티·관계와 API 엔드포인트를 설계한다. 기능마다 필요한 엔티티·엔드포인트가 다르다 — 고정 목록 부착 금지.\n"
+    "1. [필수] entities: features의 각 핵심 기능이 다루는 데이터를 엔티티로 만든다. 각 엔티티는 "
+    "name, source('feature:<기능명>' 또는 'ux:<화면명>'), identifiers, fields([{name,type}], 도메인 필드를 실제로 채움), relations([{to,type}]) 를 갖는다. "
+    "identifiers는 식별자 3종을 모두 포함한다 — pk(내부: bigint auto-increment 또는 snowflake, 모든 FK는 PK 참조, 외부 미노출), "
+    "business_key(사람이 읽는 문자열, 검색·운영용, ROHA0001 순번류), public_key(난수 10~12자, URL·API 응답용). "
+    "외부 노출(API 경로·응답·URL·QR·이메일 링크)은 PK를 절대 쓰지 않고 public_key만 쓴다.\n"
+    "2. [필수] api_spec.endpoints: /api/v1 prefix, resource 기반 REST, kebab-case. item 경로 파라미터는 {public_key}만(id/pk 노출 금지). "
+    "각 endpoint는 endpoint_id, method(GET/POST/PUT/PATCH/DELETE), path, feature_ref, security_ref, "
+    "request_schema([{name,type,required,format,min,max,enum}]), success_cases·error_cases([{code,http_status,description}], 비어선 안 됨), acceptance_criteria 를 갖는다.\n"
+    "3. 발명 금지: entity.source의 기능명·endpoint.feature_ref는 입력 features의 기능명(또는 ux 화면명)에서만, security_ref는 입력 security의 control에서만 쓴다. 입력에 없는 것 창작 금지.\n"
+    "4. response_contract는 시스템이 고정 주입하므로 출력에 넣지 않아도 된다(넣어도 강제 교체됨).\n"
+    "5. 출력은 JSON 하나만, 정확히 이 최상위 키들: {\"entities\":[...(비어있으면 실패)...], \"api_spec\":{\"endpoints\":[...]}, \"open_questions\":[...], \"provenance\":{...}}. "
+    "설명·코드펜스 금지. 단발 1-pass(반복·도구 호출 없음)."
+)
 
 CORE_ORIGINS = ("fact", "human")
 HTTP_METHODS = ("GET", "POST", "PUT", "PATCH", "DELETE")
@@ -179,8 +208,60 @@ class ArtifactRef(BaseModel):
     endpoint_id: Optional[str] = None
 
 
+# ---------------- 엔티티(데이터 모델) — 식별자 3종 규칙 ----------------
+class EntityIdentifiers(BaseModel):
+    # 값은 설명 문자열 또는 구조화 객체({type,strategy,...}) 둘 다 허용. 3종 키가 모두 '존재'하면 된다.
+    pk: Any           # 내부 PK(bigint auto-increment 또는 snowflake). 모든 FK는 PK 참조. 외부 미노출.
+    business_key: Any  # 사람이 읽는 문자열(검색·운영용, ROHA0001 순번류).
+    public_key: Any    # 난수 10~12자(URL·API 응답용). 외부 노출은 이것만.
+
+    @field_validator("pk", "business_key", "public_key")
+    @classmethod
+    def _ne(cls, v, info):
+        empty = v is None or (isinstance(v, str) and not v.strip()) or (isinstance(v, (dict, list)) and not v)
+        if empty:
+            raise ValueError(f"식별자 3종 누락: '{info.field_name}'(PK/business_key/public_key 모두 필수)")
+        return v
+
+
+class EntityField(BaseModel):
+    name: str
+    type: str
+
+    @field_validator("name", "type")
+    @classmethod
+    def _fne(cls, v, info):
+        if not v or not str(v).strip():
+            raise ValueError(f"엔티티 필드 '{info.field_name}' 생략 금지")
+        return v
+
+
+class Entity(BaseModel):
+    name: str
+    source: str                      # feature:<기능> 또는 ux:<화면> (발명 금지)
+    identifiers: EntityIdentifiers
+    fields: List[EntityField] = []
+    relations: List[dict] = []       # [{to, type}] 예: {"to":"reservations","type":"1:N"}
+    provenance: dict = {}
+
+    @field_validator("name")
+    @classmethod
+    def _name(cls, v):
+        if not v or not v.strip():
+            raise ValueError("entity name 필수")
+        return v
+
+    @field_validator("source")
+    @classmethod
+    def _source(cls, v):
+        if not (str(v).startswith("feature:") or str(v).startswith("ux:")):
+            raise ValueError(f"엔티티 source는 feature:/ux: 근거 필수 (Traceability, 현재 '{v}')")
+        return v
+
+
 class BackendBody(BaseModel):
     api_spec: ApiSpec
+    entities: List[Entity] = []
     artifact_refs: List[ArtifactRef] = []
     open_questions: List[str] = []
     provenance: dict
@@ -226,11 +307,14 @@ def _resolve_resource(feature_name):
     return None
 
 
-def build_prompt(features: dict, security: dict):
-    """E15: 시스템 프롬프트 + 입력 데이터 + 계약 규칙을 조합한 메시지 배열."""
+def build_prompt(features: dict, security: dict, ux: dict = None, discovery: dict = None):
+    """E15: 시스템 프롬프트 + 입력 데이터 + 계약 규칙을 조합한 메시지 배열.
+    real 단계: features·security에 ux·discovery 추가(목표·요구·플로우를 스키마·API에 반영)."""
+    disc = {k: (discovery or {}).get(k) for k in ("goal_interpretation", "requirement_normalization", "proposed_requirements")}
+    payload = {"features": features, "security": security, "ux": ux or {}, "discovery": disc}
     return [
         {"role": "system", "content": SYSTEM_PROMPT + "\n\n" + CONTRACT_RULES},
-        {"role": "user", "content": json.dumps({"features": features, "security": security}, ensure_ascii=False)},
+        {"role": "user", "content": json.dumps(payload, ensure_ascii=False)},
     ]
 
 
@@ -245,6 +329,8 @@ def offline_llm(prompt) -> str:
     control_set = {r.get("control") for r in security.get("security_requirements", [])}
 
     endpoints = []
+    entities = []
+    seen_entities = set()
     open_questions = []
 
     for f in feat_list:
@@ -263,6 +349,21 @@ def offline_llm(prompt) -> str:
         acc = f.get("acceptance_criteria", [])
         if not acc:
             open_questions.append(f"기능 '{fname}': acceptance_criteria 근거 없음")
+
+        # 엔티티(식별자 3종). 도메인 필드는 근거 없음 -> 빈 fields + open_question(real이 채움).
+        if resource not in seen_entities:
+            seen_entities.add(resource)
+            entities.append({
+                "name": resource, "source": f"feature:{fname}",
+                "identifiers": {
+                    "pk": "bigint auto-increment (내부, 모든 FK는 PK 참조, 외부 미노출)",
+                    "business_key": "ROHA0001 순번류(사람이 읽는 검색·운영 키)",
+                    "public_key": "random 10-12 chars (URL·API 응답용, 외부 노출)",
+                },
+                "fields": [], "relations": [],
+                "provenance": {"source": "fact", "identifiers": "fact", "fields": "inference"},
+            })
+            open_questions.append(f"엔티티 '{resource}': 도메인 필드는 근거 없음 -> 정의 필요(발명 금지)")
 
         # 1) Collection GET (가변·대량 목록 가정 -> cursor pagination)
         succ, err = _standard_cases("GET", "list")
@@ -307,17 +408,56 @@ def offline_llm(prompt) -> str:
 
     result = {
         "api_spec": {"response_contract": RESPONSE_CONTRACT, "endpoints": endpoints},
+        "entities": entities,
         "open_questions": open_questions,
-        "provenance": {"endpoints": "per_item", "request_schema": "inference",
+        "provenance": {"entities": "per_item", "endpoints": "per_item", "request_schema": "inference",
                        "acceptance_criteria": "fact", "domain_cases": "fact"},
     }
     return json.dumps(result, ensure_ascii=False)
 
 
-def execute(features: dict, security: dict, llm=offline_llm) -> str:
-    """E15/E16: 프롬프트 조합 후 (mock) LLM 호출."""
-    prompt = build_prompt(features, security)
-    return llm(prompt)
+def _extract_json(text: str) -> str:
+    text = text.replace("```json", "").replace("```", "").strip()
+    i, j = text.find("{"), text.rfind("}")
+    return text[i:j + 1] if i != -1 and j != -1 and j > i else text
+
+
+def make_real_llm(model=REAL_MODEL_DEFAULT, max_tokens=16000):
+    """real llm(prompt_messages) -> str. Anthropic messages API(검색 없음, 단발 1-pass).
+    실패(SDK 미설치/키 없음/네트워크/API 에러)는 RuntimeError — execute에서 offline 폴백."""
+    def real_llm(prompt) -> str:
+        try:
+            import anthropic
+        except ImportError as e:
+            raise RuntimeError("real 모드 불가: anthropic SDK 미설치") from e
+        api_key = os.environ.get("ANTHROPIC_API_KEY")
+        if not api_key:
+            raise RuntimeError("real 모드 불가: ANTHROPIC_API_KEY 없음")
+        system = next(m["content"] for m in prompt if m["role"] == "system") + REAL_MODE_INSTRUCTION
+        user = next(m["content"] for m in prompt if m["role"] == "user")
+        client = anthropic.Anthropic(api_key=api_key)
+        try:
+            resp = client.messages.create(model=model, max_tokens=max_tokens, system=system,
+                                          messages=[{"role": "user", "content": user}])
+        except Exception as e:
+            raise RuntimeError(f"real 모드 Anthropic API 호출 실패: {type(e).__name__}: {e}") from e
+        text = "".join(b.text for b in resp.content if getattr(b, "type", None) == "text").strip()
+        if not text:
+            raise RuntimeError("real 모드: Anthropic 응답에 텍스트 없음")
+        return _extract_json(text)
+    return real_llm
+
+
+real_llm = make_real_llm()
+
+
+def execute(features: dict, security: dict, ux: dict = None, discovery: dict = None, llm=offline_llm) -> str:
+    """E15/E16: 프롬프트 조합 후 LLM 호출. real 실패 시 offline 폴백."""
+    prompt = build_prompt(features, security, ux, discovery)
+    try:
+        return llm(prompt)
+    except RuntimeError:
+        return offline_llm(prompt)  # real 실패 -> offline 폴백
 
 
 def _render_stub(ep: Endpoint) -> str:
@@ -338,11 +478,29 @@ def _render_stub(ep: Endpoint) -> str:
 def produce(inputs: dict, llm=offline_llm, artifact_dir: Path = DEFAULT_ARTIFACT_DIR) -> dict:
     features = inputs["features"]
     security = inputs.get("security", {})
-    raw = execute(features, security, llm)
+    ux = inputs.get("ux", {})
+    discovery = inputs.get("discovery", {})  # v14: 목표·요구를 스키마·API에 반영(real 프롬프트)
+    raw = execute(features, security, ux, discovery, llm)
     spec = json.loads(raw)
 
-    # B: Pydantic 검증(엔드포인트 계약 강제). 위반 시 여기서 raise.
+    # response_contract는 시스템 고정값으로 강제(LLM 출력 신뢰 안 함, 계약 임의변경 차단).
+    spec.setdefault("api_spec", {})["response_contract"] = RESPONSE_CONTRACT
+
+    # B: Pydantic 검증(엔드포인트·엔티티 계약 강제). 위반 시 여기서 raise.
     api_spec = ApiSpec(**spec["api_spec"])
+    entities = [Entity(**e) for e in spec.get("entities", [])]
+
+    # 발명 금지 교차검증: entity.source 기능명·endpoint.feature_ref는 입력 features/ux에서만.
+    feat_names = {f.get("feature") for f in (features.get("features", []) or [])}
+    ux_screens = {s.get("screen") for s in (ux.get("information_architecture", []) or [])}
+    allowed = feat_names | ux_screens
+    for e in entities:
+        ref = e.source.split(":", 1)[1] if ":" in e.source else e.source
+        if ref not in allowed:
+            raise ValueError(f"발명 금지 위반: entity '{e.name}' source '{e.source}'가 입력 features/ux에 없음")
+    for ep in api_spec.endpoints:
+        if ep.feature_ref not in feat_names and ep.feature_ref not in ux_screens:
+            raise ValueError(f"발명 금지 위반: endpoint '{ep.endpoint_id}' feature_ref '{ep.feature_ref}'가 입력에 없음")
 
     # F17: 코드는 artifact 파일로, body에는 경로/메타만.
     artifact_dir = Path(artifact_dir)
@@ -360,8 +518,9 @@ def produce(inputs: dict, llm=offline_llm, artifact_dir: Path = DEFAULT_ARTIFACT
         ))
 
     body_model = BackendBody(
-        api_spec=api_spec, artifact_refs=artifact_refs,
-        open_questions=spec["open_questions"], provenance=spec["provenance"],
+        api_spec=api_spec, entities=entities, artifact_refs=artifact_refs,
+        open_questions=spec.get("open_questions", []),
+        provenance=spec.get("provenance", {"entities": "per_item", "endpoints": "per_item"}),
     )
     # A2: 반드시 dict 반환(canonical 비교용)
     return body_model.model_dump()

@@ -4,7 +4,7 @@ intake -> strategy -> ux -> security -> features -> backend 까지 돌려
 계약 준수, 제약 강제, orchestrator 결합, Pydantic 검증을 확인한다.
 오프라인 모드(결정적). site-build.v7 워크플로(backend 노드)를 사용한다. 기존 데모/워크플로는 그대로 둔다.
 """
-import sys, shutil, json
+import os, sys, shutil, json
 from pathlib import Path
 
 BASE = Path(__file__).resolve().parent.parent
@@ -148,3 +148,48 @@ try:
     print("FAIL: 통과되면 안 됨")
 except ValidationError as e:
     print("정상 차단:", e.errors()[0]["msg"])
+
+
+# ── offline 엔티티(식별자 3종) 확인 ──
+print("\n=== 엔티티(데이터 모델) — 식별자 3종 ===")
+for e in b.get("entities", []):
+    ids = e["identifiers"]
+    print(f"  {e['name']:14} source={e['source']!r} pk/business/public 보유:",
+          bool(ids.get("pk") and ids.get("business_key") and ids.get("public_key")))
+print("엔티티 비어있지 않음(features 있음):", len(b.get("entities", [])) > 0)
+assert b.get("entities"), "features가 있는데 entities가 비었음"
+assert all(e["source"].startswith(("feature:", "ux:")) for e in b["entities"]), "entity source 근거 위반"
+
+# ── [real] 기능 기반 엔티티·API 설계(BACKEND_MODE=real일 때만) ──
+if os.environ.get("BACKEND_MODE") == "real":
+    print("\n=== [real] 기능 기반 엔티티·API(features·ux·discovery 기반) ===")
+    feats = store.version("features", store.head("features")["current_version"])["body"]
+    sec = store.version("security", store.head("security")["current_version"])["body"]
+    uxb = store.version("ux", store.head("ux")["current_version"])["body"]
+    disc = {
+        "goal_interpretation": {"inferred_dimensions": [{"dimension": "예약 성사·정산 신뢰", "basis": "goal"}],
+                                "candidate_metrics": [], "assumptions": []},
+        "requirement_normalization": [{"id": f"R-{i+1:02d}", "statement": r, "origin": "explicit"}
+                                      for i, r in enumerate(intake_body["requirements"])],
+        "proposed_requirements": [],
+    }
+    rb = backend_agent.produce({"features": feats, "security": sec, "ux": uxb, "discovery": disc},
+                               llm=backend_agent.real_llm, artifact_dir=ARTIFACT_DIR)
+    ents = rb["entities"]; eps = rb["api_spec"]["endpoints"]
+    print(f"entities {len(ents)}개:")
+    for e in ents:
+        ids = e["identifiers"]
+        print(f"  {e['name']} | source={e['source']} | 3키:{bool(ids['pk'] and ids['business_key'] and ids['public_key'])} | fields={[f['name'] for f in e.get('fields',[])][:5]} | rel={[r.get('to') for r in e.get('relations',[])]}")
+    print(f"endpoints {len(eps)}개:")
+    for ep in eps[:8]:
+        print(f"  {ep['method']:6} {ep['path']:30} feature_ref={ep['feature_ref']!r}")
+    # 검증
+    print("(a) 비어있지 않음:", len(ents) > 0 and len(eps) > 0)
+    print("(b) 기능별 다양성: 고유 엔티티", len({e['name'] for e in ents}), "/ 고유 feature_ref", len({ep['feature_ref'] for ep in eps}))
+    src_ok = all(e['source'].startswith(('feature:', 'ux:')) for e in ents) and all(ep['feature_ref'] for ep in eps)
+    print("(c) source feature:/ux: 근거:", src_ok)
+    key3 = all(e['identifiers']['pk'] and e['identifiers']['business_key'] and e['identifiers']['public_key'] for e in ents)
+    pub_only = all(('{' not in seg) or seg == '{public_key}' for ep in eps for seg in ep['path'].split('/'))
+    print("(d) 식별자 3종 + 외부 public_key만:", key3 and pub_only)
+    assert len(ents) > 0 and len(eps) > 0 and src_ok and key3 and pub_only
+    print("[real] 검증 통과(Pydantic + 발명금지 교차검증 포함)")
