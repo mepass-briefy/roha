@@ -13,6 +13,8 @@
   --raised:var(--surf-l-2); --line:#EBEAEB; --line-strong:#E0DFE0;
   --text:#1A191A; --text-2:#6D6D6D; --text-3:#9A989A;
   --success:var(--success-l); --warning:var(--warning-l); --danger:var(--danger-l);
+  /* neutral(주요 액션 대비용) + danger-soft(강조 위험) */
+  --neutral:#292929; --on-neutral:#FFFFFF; --danger-soft-bg:#FFF0F0; --danger-soft-fg:#AB0909;
   /* brand 기본값(인디고 라이트) — 초기 스크립트가 data-theme 설정 전 안전망 */
   --primary:#354497; --on-primary:#FFFFFF; --primary-container:#D9DDF2; --on-primary-container:#0D1126;
   --tab-bg:#EDF9FF; --tab-fg:#1056BD; --menu-sel:#EEEEEE; --checked:#51C0FF;
@@ -24,10 +26,12 @@
 [data-theme="indigo"] {
   --primary:#354497; --on-primary:#FFFFFF; --primary-container:#D9DDF2; --on-primary-container:#0D1126;
   --tab-bg:#EDF9FF; --tab-fg:#1056BD; --menu-sel:#EEEEEE; --checked:#51C0FF;
+  --neutral:#292929; --on-neutral:#FFFFFF;
 }
 [data-theme="red"] {
   --primary:#CC0000; --on-primary:#FFFFFF; --primary-container:#FFCCCC; --on-primary-container:#330000;
   --tab-bg:#FFEFEF; --tab-fg:#FF5E5E; --menu-sel:#EEEEEE; --checked:#FF5E5E;
+  --neutral:#292F45; --on-neutral:#FFFFFF;  /* 남색기 — 빨강 danger와 대비 강화 */
 }
 [data-mode="dark"] {
   --bg:var(--surf-d-0); --card:var(--surf-d-1); --sidebar:var(--surf-d-1);
@@ -35,6 +39,7 @@
   --text:#E6E5E6; --text-2:#A4A2A4; --text-3:#6D6B6D;
   --success:var(--success-d); --warning:var(--warning-d); --danger:var(--danger-d);
   --menu-sel:var(--surf-d-3);
+  --neutral:#E6E5E6; --on-neutral:#1A191A; --danger-soft-bg:#3A1515; --danger-soft-fg:#F1A7A7;
   color-scheme:dark;
 }
 [data-theme="indigo"][data-mode="dark"] {
@@ -111,15 +116,23 @@ input:focus, textarea:focus, select:focus { border-color:var(--primary); }
 ::placeholder { color:var(--text-3); opacity:1; }
 .hint { font-size:12px; color:var(--text-3); margin-top:2px; }
 
-/* 버튼: primary=brand 채움, tonal=외곽선(보조), text=brand 텍스트(ghost) */
+/* 버튼 5종(명세): primary / neutral / outline / danger / danger-soft. ghost(배경없는 텍스트) 미사용.
+   대비 규칙: 코랄은 brand=danger(빨강)라 주요 액션을 neutral(어두운 남색)로 바꿔 삭제와 구분. 인디고는 primary 그대로. */
 button { font-family:var(--font); cursor:pointer; }
-.btn-primary, .btn-tonal, .btn-text { font-size:13px; font-weight:600; padding:9px 18px; border-radius:var(--r-md); border:none; transition:filter .15s,background-color .15s; }
+.btn-primary, .btn-neutral, .btn-tonal, .btn-text, .btn-danger-soft {
+  font-size:13px; font-weight:600; padding:9px 18px; border-radius:var(--r-md); border:.5px solid transparent;
+  transition:filter .15s,background-color .15s; display:inline-flex; align-items:center; gap:7px; }
+.btn-primary, .btn-neutral, .btn-tonal, .btn-text, .btn-danger-soft { vertical-align:middle; }
+.btn-primary .ico, .btn-neutral .ico, .btn-tonal .ico, .btn-text .ico, .rowbtn .ico { width:15px; height:15px; }
 .btn-primary { background:var(--primary); color:var(--on-primary); }
+[data-theme="red"] .btn-primary { background:var(--neutral); color:var(--on-neutral); }  /* 코랄: 주요 액션 neutral로 삭제와 대비 */
 .btn-primary:hover:not(:disabled) { filter:brightness(1.08); }
-.btn-tonal { background:transparent; border:.5px solid var(--line-strong); color:var(--text); }
-.btn-tonal:hover:not(:disabled) { background:var(--raised); }
-.btn-text { background:transparent; color:var(--primary); padding:9px 12px; }
-.btn-text:hover:not(:disabled) { background:var(--raised); }
+.btn-neutral { background:var(--neutral); color:var(--on-neutral); }
+.btn-neutral:hover:not(:disabled) { filter:brightness(1.12); }
+/* 보조: outline (btn-tonal·btn-text 모두 외곽선 — ghost 미사용) */
+.btn-tonal, .btn-text { background:transparent; border-color:var(--line-strong); color:var(--text); }
+.btn-tonal:hover:not(:disabled), .btn-text:hover:not(:disabled) { background:var(--raised); }
+.btn-danger-soft { background:var(--danger-soft-bg); color:var(--danger-soft-fg); }
 button:disabled { opacity:.5; cursor:default; }
 .row { display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
 .actionbar { display:flex; gap:10px; align-items:center; flex-wrap:wrap; padding:10px 14px; background:var(--card);
@@ -164,6 +177,8 @@ ul.oq { margin:8px 0 0; padding-left:18px; } ul.oq li { font-size:13px; color:va
 .bar { height:6px; width:120px; background:var(--raised); border-radius:999px; overflow:hidden; display:inline-block; vertical-align:middle; }
 .bar-fill { height:100%; background:var(--primary); border-radius:999px; }
 .rowbtn { font-size:12.5px; padding:6px 12px; border-radius:var(--r-sm); }
-.rowbtn.del { color:var(--danger); background:transparent; border:none; font-weight:600; }
-.rowbtn.del:hover { background:color-mix(in srgb, var(--danger) 10%, transparent); }
+/* danger(텍스트형): 배경 없음 + danger-soft-fg(#AB0909) + 휴지통 아이콘. 삭제 액션. */
+.rowbtn.del { color:var(--danger-soft-fg); background:transparent; border:none; font-weight:600; display:inline-flex; align-items:center; gap:5px; }
+.rowbtn.del:hover { background:var(--danger-soft-bg); }
+.rowbtn.del .ico { width:14px; height:14px; }
 .pager { display:flex; gap:8px; align-items:center; margin-top:18px; }

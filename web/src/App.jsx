@@ -11,6 +11,9 @@ const IconPlus = () => (
 const IconLogout = () => (
   <svg className="ico" viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9" /></svg>
 );
+const IconTrash = () => (
+  <svg className="ico" viewBox="0 0 24 24"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6" /></svg>
+);
 
 const NODE_LABELS = {
   intake: "입력", discovery: "Discovery", strategy: "전략", ux: "UX",
@@ -232,7 +235,7 @@ function ProjectList({ onOpen }) {
                       {p.status === "done"
                         ? <button className="btn-text rowbtn" onClick={() => act(() => api.reopen(p.public_key))}>재개</button>
                         : <button className="btn-text rowbtn" onClick={() => act(() => api.complete(p.public_key))}>완료</button>}
-                      <button className="rowbtn del" onClick={() => { if (confirm("이 프로젝트를 삭제(숨김)할까요?")) act(() => api.remove(p.public_key)); }}>삭제</button>
+                      <button className="rowbtn del" onClick={() => { if (confirm("이 프로젝트를 삭제(숨김)할까요?")) act(() => api.remove(p.public_key)); }}><IconTrash />삭제</button>
                     </td>
                   </tr>
                 );
