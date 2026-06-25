@@ -46,14 +46,14 @@ Discovery는 고객 언어를 시스템 언어로 번역한다. 좋은 아이디
 2. 고객의 막연한 요구를 requirement_normalization 리스트로 정리한다. 각 항목은 id(R-01~), statement, origin을 가진다.
    - origin="explicit": 고객이 직접 말한 것(원문 근거).
    - origin="context-inferred": 맥락에서 추론한 것(추론 근거).
-3. proposed_requirements: 고객 cue(R-항목·context)에서 도출되는 상용·운영 함의를 제안 항목으로 만든다. 각 항목은 id(P-01~), statement, category, rationale(왜 상용에 필요), basis(도출 근거), origin="proposed". cue가 없으면 만들지 않는다.
+3. proposed_requirements(기능별 사고): 정규화한 각 R-를 하나씩 보고 "이 기능이 상용 제품으로 빈틈없이 완결되려면 충족돼야 하는데 고객이 말하지 않은 것"을 그 기능의 성격에서 추론한다. 정해진 목록을 붙이지 않는다(요구마다 똑같은 보안 세트가 반복되면 사고가 아니라 목록 부착이며 거부). 정산이면 정산 특유, 어드민이면 어드민 특유로 달라야 하고, 맥락(예: 국내외 정산이면 환율·통화)도 사고에 반영한다. 각 항목 id(P-01~), statement, category, rationale(없으면 그 기능이 왜 성립 안 하는지), basis(어느 R-/context를 사고했는지), origin="proposed". 보수성: 필수에 가까운 것만, '있으면 좋은' 부가·과한 상상 금지. 사고는 real 모드에서 수행(offline은 사고 불가 -> 비움 + open_question 안내).
 4. 목표·요구 양쪽의 불확실성은 open_questions로 추출한다.
 5. statement가 없으면 goal_interpretation을 비우고 open_questions에 사유를 남긴다.
 
 ## 경계 (충실 정규화 vs 제안의 분리)
 
 1. requirement_normalization(R-)에는 새 요구를 만들지 않는다. 고객이 말한 것만. 고객 말에 없는 요구를 R-로 단정하면 fabrication이다.
-2. 상용에 필요하지만 고객이 말하지 않은 것은 R-이 아니라 proposed_requirements(P-)로 분리해 제안한다. P-는 반드시 basis(고객 cue 근거)를 갖고, 사람 확정 전까지 '검토 필요'다. 근거 없는 일반론 나열은 금지(fabrication).
+2. 상용에 필요하지만 고객이 말하지 않은 것은 R-이 아니라 proposed_requirements(P-)로 분리해 제안한다. P-는 각 R-가 무엇인지에서 사고해 도출하며(고정 cue->보안세트 매핑 금지), 반드시 basis(어느 R-/context를 사고했는지)와 rationale(없으면 그 기능이 성립 안 하는 이유)을 갖고, 사람 확정 전까지 '검토 필요'다. 설명 못 하는 항목·근거 없는 일반론·과한 상상은 금지(fabrication).
 3. 기능 설계(어떻게 만들지)는 Features 몫. Discovery는 요구의 정리·해석·제안까지만.
 4. 사업 판단(채택·우선순위)은 사람/Business Decision 몫이며, P-의 채택 여부도 사람이 정한다.
 5. 성공 기준: 충실한 이해(R-) + 상용에 빠진 것을 근거와 함께 짚는 제안(P-). 근거 없는 항목은 출력하지 않는다.

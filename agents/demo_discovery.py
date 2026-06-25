@@ -107,3 +107,50 @@ gate_block("원문 근거 없는 요구(statement 없음)", {
     "open_questions": [], "provenance": {"goal_interpretation": "inference", "requirement_normalization": "per_item"}})
 # 정상 -> 현재 산출 그대로
 print("정상 산출 REVIEW:", gate_review.run_review_gate("discovery", b)["status"])
+
+print("\n=== proposed_requirements: offline은 사고 불가 -> 비움 + real 안내 ===")
+if DMODE == "mock":
+    print("offline proposed_requirements(빈 값이어야):", b["proposed_requirements"])
+    assert b["proposed_requirements"] == [], "offline은 고정 매핑 금지 -> 빈 배열이어야 함"
+    real_oq = [q for q in b["open_questions"] if "real" in q and "proposed" in q]
+    print("real 모드 필요 open_question:", real_oq[:1])
+    assert real_oq, "offline에서 'proposed는 real 필요' 안내가 open_questions에 있어야 함"
+else:
+    print("(real 모드: b의 proposed는 사고 산출이므로 빈 값이 아님 — 아래 판별 블록에서 검증)")
+print("provenance.proposed_requirements:", b["provenance"].get("proposed_requirements"))
+
+# 기능별 사고 판별(real 전용): R-03(국내외 정산) vs R-06(어드민) 제안이 서로 다른가 + 환율/통화가 나오는가.
+if DMODE == "real":
+    print("\n=== [real] 기능별 사고 판별(인플루언서 케이스) ===")
+    INF = {
+        "goal": {"statement": "인플루언서 캠페인 관리 프로덕트를 만들고 싶다", "details": {}},
+        "requirements": [
+            "인플루언서들의 캠페인 추적 기능이 필요합니다.",                              # R-01
+            "광고주의 의뢰는 계약금이 걸려야 합니다.",                                    # R-02
+            "인플루언서들은 국내,외에 포진되어 있어 그들의 통화로 정산이 되어야 합니다.",  # R-03 국내외 정산
+            "실제 활동하는 인플루언서인지 검증이 필요합니다.",                            # R-04
+            "내가 확인하고 계약 관리를 하며 정산을 하는 어드민이 있어야 합니다.",          # R-05 어드민
+        ],
+        "context": "인플루언서 마케팅 매칭 플랫폼", "target_platform": "both",
+    }
+    bi = discovery_agent.produce({"intake": INF}, llm=D_LLM)
+    props = bi["proposed_requirements"]
+    print(f"proposed {len(props)}건:")
+    for p in props:
+        print(f"  {p['id']} [{p.get('category')}] basis={p.get('basis')}")
+        print(f"      stmt: {p['statement']}")
+        print(f"      why : {p['rationale']}")
+    # 사고 판별: basis의 R-참조로 정산(R-03) vs 어드민(R-05) 제안을 분리해 내용이 다른지 본다.
+    settle = [p for p in props if "R-03" in p.get("basis", "")]
+    admin = [p for p in props if "R-05" in p.get("basis", "")]
+    fx = [p for p in props if any(k in (p["statement"] + p["rationale"]) for k in ("환율", "통화", "외화", "exchange"))]
+    settle_stmts, admin_stmts = {p["statement"] for p in settle}, {p["statement"] for p in admin}
+    print(f"\n정산(R-03 기반) 제안: {[p['id'] for p in settle]}")
+    print(f"어드민(R-05 기반) 제안: {[p['id'] for p in admin]}")
+    print("핵심 판별 — 정산 제안 ∩ 어드민 제안 내용 겹침:",
+          (settle_stmts & admin_stmts) or "없음 (서로 다른 요건 = 기능별 사고 성공)")
+    print("결정적 증거 — 환율/통화 처리 제안(국내외 정산 사고에서만 도출):",
+          [p["id"] for p in fx] or "없음(미검출=사고 실패 의심)")
+    print("환율 제안이 정산(R-03) 사고에서 나왔는가:", bool(fx) and all("R-03" in p.get("basis", "") for p in fx))
+    print("각 proposed basis+rationale 실내용 보유:",
+          all(p.get("basis") and p.get("rationale") and len(p["rationale"]) > 10 for p in props))

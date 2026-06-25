@@ -42,15 +42,18 @@ REAL_MODE_INSTRUCTION = (
     "2. 기능 제안 금지(어떻게 만들지는 Features). 요구의 정리·해석까지만.\n"
     "3. 사업 판단 금지(채택·우선순위는 open_questions).\n"
     "4. 애매하면 requirement 항목으로 만들지 말고 open_questions로.\n"
-    "B-2. proposed_requirements: 상용·운영을 위해 '고객이 말하지 않았지만 필요한' 요구를 제안한다(requirement_normalization과 별도 층). "
+    "B-2. proposed_requirements: 정규화한 각 R- 요구를 하나씩 보고, '이 기능이 실제 상용 제품으로 빈틈없이 완결되려면 충족돼야 하는데 "
+    "고객이 말하지 않은 것'을 그 기능의 성격에서 추론한다(requirement_normalization과 별도 층, R-을 오염시키지 않는다). "
+    "정해진 목록을 붙이지 말 것. 어떤 요구든 똑같은 항목(RBAC·접근통제·감사로그 같은 보안 세트)이 반복되면 그것은 사고가 아니라 목록 부착이며 거부된다. "
+    "각 R-가 '무엇을 하는 기능인지'에서 출발해 그 기능 특유의 빠진 요건을 도출한다 — 정산이면 정산 특유, 어드민이면 어드민 특유로 서로 달라야 한다. "
+    "맥락 반영: 같은 도메인도 요구·Context의 구체성에 따라 다르게 사고한다. "
+    "예) '국내외 정산'(통화가 여럿)이면 환율·통화 변환·정산 시점 환율 기준처럼 그 요구의 구체성에서만 나오는 요건을 도출한다(목록이 아니라 그 요구가 무엇인지 생각한 결과). "
     "각 항목 {id:\"P-01\".., statement, category, rationale, basis, origin:\"proposed\"}. "
-    "이것은 R-(충실 정규화)를 오염시키지 않는다: R-은 고객이 말한 것만, P-는 그 말에서 도출되는 상용 함의의 제안이다. "
-    "basis 필수(어느 고객 cue/R-항목/context 구절에서 도출됐는지). 근거 없는 제안은 fabrication이므로 금지. "
-    "rationale 필수(왜 상용에 필요한가). 전부 사람 확정 전 '검토 필요'. provenance.proposed_requirements=\"inference\".\n"
-    "  제안 대상 예(고객 cue가 있을 때만): 관리자/운영 언급 -> 역할 기반 접근 제어(RBAC)·폐쇄적 접근 구조(관리 기능 비공개), "
-    "회원/가입/인증 언급 -> 인증·계정 보안 기준(비밀번호·세션·인가), 정산/결제/계약금 언급 -> 거래·정산 무결성·감사 로그, "
-    "검증 언급 -> 신원·자격 검증 프로세스(승인 주체·기준·기록), 개인정보 언급 -> 개인정보 보호·최소수집·접근통제. "
-    "cue가 없으면 해당 제안을 만들지 않는다(일반론 나열 금지).\n"
+    "제약(No-Fabrication 유지): "
+    "(1) basis 필수 — 어느 R-(또는 Context 구절)를 보고 사고했는지 명시. 근거 없는 제안은 fabrication이므로 금지. "
+    "(2) rationale 필수 — 그것이 없으면 그 기능이 왜 상용으로 성립하지 않는지 실제 내용으로 설명. 설명 못 하면 그 제안은 제외. "
+    "(3) 보수성 — '없으면 그 기능이 성립 안 하는' 필수에 가까운 것만. '있으면 좋은' 부가나 과한 상상(블록체인·AI 추천·게이미피케이션 등 그 기능 완결과 무관한 것)은 금지. "
+    "(4) origin=\"proposed\", 전부 사람 확정 전 미확정. provenance.proposed_requirements=\"inference\".\n"
     "C. open_questions: 목표·요구 양쪽의 불확실성.\n"
     "D. Context 활용: intake.context(고객·프로덕트 맥락)가 있으면 Goal과 함께 해석한다. Context에서 끌어낸 것은 inference로 표기하고(단정 금지), "
     "Context 기반으로 정리한 요구는 origin=\"context-inferred\"로 둔다(고객이 직접 말한 explicit과 구분). "
@@ -144,53 +147,9 @@ def validate(body: dict) -> dict:
     return body
 
 
-_PROPOSAL_RULES = [
-    (["어드민", "관리자", "관리", "운영"],
-     {"statement": "역할 기반 접근 제어(RBAC): 관리자·운영자와 일반 사용자의 권한을 분리한다.",
-      "category": "access-control",
-      "rationale": "관리/운영 주체와 다수 사용자 유형이 존재 — 상용은 권한 분리 없이는 운영·보안이 성립하지 않음."}),
-    (["어드민", "관리자", "권한", "접근"],
-     {"statement": "폐쇄적 접근 구조: 관리·운영 기능은 인증·인가된 사용자만 접근(공개 노출 금지).",
-      "category": "access-control",
-      "rationale": "관리 기능이 공개 경로에 노출되면 무단 접근 위험. 상용 기본 통제."}),
-    (["회원", "가입", "로그인", "인증", "계정"],
-     {"statement": "인증·계정 보안 기준(비밀번호 정책·세션 관리·인가 검사).",
-      "category": "security",
-      "rationale": "회원/가입을 언급 — 계정이 존재하면 인증·세션·인가는 필수 기반."}),
-    (["정산", "결제", "계약금", "거래", "대금"],
-     {"statement": "거래·정산 무결성과 감사 로그(금액·상태 변경 이력 추적·정산 검증).",
-      "category": "data-integrity",
-      "rationale": "금전 흐름을 언급 — 분쟁·오류 대비 변경 이력과 검증이 상용 필수."}),
-    (["검증", "인증서", "자격", "실명"],
-     {"statement": "신원·자격 검증 프로세스 정의(승인 주체·기준·기록).",
-      "category": "operations",
-      "rationale": "검증을 언급 — 누가 무엇을 어떤 기준으로 승인하는지 정의 필요."}),
-]
-
-
-def _propose(requirements, context):
-    """결정적 제안 생성(mock). 고객 cue가 있을 때만 제안한다(근거 없는 일반론 금지)."""
-    items = [(f"R-{i + 1:02d}", r) for i, r in enumerate(requirements)]
-    ctx = context or ""
-
-    def find_basis(keys):
-        for rid, r in items:
-            if any(k in r for k in keys):
-                return f"{rid}: {r}"
-        if ctx and any(k in ctx for k in keys):
-            return "intake.context"
-        return None
-
-    out, seen = [], set()
-    for keys, prop in _PROPOSAL_RULES:
-        if prop["statement"] in seen:
-            continue
-        basis = find_basis(keys)
-        if not basis:                     # 근거 없으면 제안하지 않음(No-Fabrication)
-            continue
-        seen.add(prop["statement"])
-        out.append({"id": f"P-{len(out) + 1:02d}", **prop, "origin": PROPOSED_ORIGIN, "basis": basis})
-    return out
+# proposed_requirements는 '기능별 사고'다(각 R-가 무엇인지에서 빠진 상용 요건을 추론).
+# offline(규칙 기반)은 사고할 수 없고, 고정 cue->보안세트 매핑은 거부된 방식이므로 두지 않는다.
+# 따라서 offline은 proposed를 비우고 'real 필요'를 open_questions로 표시한다. real 모드 지시(B-2)에 사고 절차가 있다.
 
 
 def offline_llm(system: str, user: str) -> str:
@@ -236,8 +195,11 @@ def offline_llm(system: str, user: str) -> str:
     if not requirements:
         open_questions.append("요구사항 미제공: 정규화할 요구 없음.")
 
-    # proposed_requirements: 고객 cue에서 도출되는 상용 준비 제안(R-과 분리, 사람 확정 전).
-    proposed_requirements = _propose(requirements, context)
+    # proposed_requirements: 기능별 사고(각 R-가 무엇인지에서 빠진 상용 요건 추론)는 real 모드에서만 가능.
+    # offline은 규칙 기반이라 사고 불가 -> 비우고 안내(고정 매핑은 거부된 방식이므로 두지 않는다).
+    proposed_requirements = []
+    if requirements:
+        open_questions.append("상용 빈틈 제안(proposed_requirements)은 각 요구를 기능별로 사고해야 함: offline은 사고 불가 -> real 모드(DISCOVERY_MODE=real) 필요(현재 빈 값).")
 
     # target_platform: 입력값(fact). 미지정이면 '미정'으로 저장 + open_question.
     if not payload.get("target_platform"):
