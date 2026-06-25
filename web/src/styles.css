@@ -100,3 +100,23 @@ ul.oq { margin: var(--sp-2) 0 0; padding-left: 18px; } ul.oq li { font-size: 13p
 .err { color: var(--md-danger); font-size: 13px; margin-top: var(--sp-2); }
 .muted { color: var(--md-on-surface-variant); font-size: 13px; }
 .empty { color: var(--md-on-surface-variant); font-size: 14px; padding: var(--sp-6); text-align: center; }
+
+/* 프로젝트 목록 화면 */
+.tabs { display: flex; gap: var(--sp-1); margin-bottom: var(--sp-4); border-bottom: 0.5px solid var(--md-outline); }
+.tab { padding: 10px 16px; font-size: 14px; font-weight: 600; background: transparent; border: none; border-bottom: 2px solid transparent; color: var(--md-on-surface-variant); cursor: pointer; border-radius: 0; }
+.tab.active { color: var(--md-primary); border-bottom-color: var(--md-primary); }
+.toolbar { display: flex; gap: var(--sp-3); align-items: center; flex-wrap: wrap; margin-bottom: var(--sp-4); }
+.toolbar label { margin: 0; font-weight: 500; }
+.toolbar select, .toolbar input[type=date] { width: auto; padding: 6px 10px; }
+.ptable { width: 100%; border-collapse: collapse; }
+.ptable th { text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--md-on-surface-variant); padding: 8px 10px; border-bottom: 0.5px solid var(--md-outline); font-weight: 700; }
+.ptable td { padding: 12px 10px; border-bottom: 0.5px solid var(--md-surface-3); font-size: 14px; vertical-align: middle; }
+.ptable tr:hover td { background: var(--md-surface-2); }
+.bar { height: 6px; width: 120px; background: var(--md-surface-3); border-radius: 999px; overflow: hidden; display: inline-block; vertical-align: middle; }
+.bar-fill { height: 100%; background: var(--md-primary); }
+.rowbtn { padding: 6px 12px; font-size: 13px; }
+.rowbtn.del { color: var(--md-danger); background: transparent; }
+.rowbtn.del:hover { background: color-mix(in srgb, var(--md-danger) 12%, transparent); }
+.pager { display: flex; gap: var(--sp-2); align-items: center; margin-top: var(--sp-4); }
+.chip-done { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 6px; background: #E7F6EC; color: #15803D; }
+@media (prefers-color-scheme: dark) { .chip-done { background: #173a26; color: #7ee2a4; } }

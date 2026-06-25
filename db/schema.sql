@@ -201,3 +201,14 @@ CREATE POLICY tenant_isolation_events ON events
   USING (project_pk = current_setting('app.current_project', true)::BIGINT);
 CREATE POLICY tenant_isolation_artifacts ON artifacts
   USING (project_pk = current_setting('app.current_project', true)::BIGINT);
+
+-- 10. project_lifecycle (server 전용 보조 테이블, 동결 8테이블 외)
+-- 완료 표기·소프트 삭제. orchestrator·에이전트는 사용하지 않는다(UI/server만).
+CREATE TABLE IF NOT EXISTS project_lifecycle (
+  project_pk  BIGINT PRIMARY KEY,
+  status      VARCHAR(16) NOT NULL DEFAULT 'active',  -- active|done
+  deleted     BOOLEAN NOT NULL DEFAULT false,
+  updated_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  CONSTRAINT fk_pl_project FOREIGN KEY (project_pk) REFERENCES projects(pk),
+  CONSTRAINT ck_pl_status CHECK (status IN ('active','done'))
+);

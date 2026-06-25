@@ -87,25 +87,80 @@ class CreateReq(BaseModel):
 
 
 # ---- 엔드포인트 ----
+TOTAL_STEPS = len(NODE_ORDER)  # 진행도(완료 노드/전체)
+
+
 @app.get("/projects")
-def list_projects():
-    # 프로젝트 목록(중단 재개·완료 조회용). 외부 식별자 public_key만 노출(내부 PK 비노출).
+def list_projects(tab: str = "active", sort: str = "recent", page: int = 1, page_size: int = 20,
+                  date_from: str | None = None, date_to: str | None = None):
+    # 목록: 탭(active|done) + 정렬(recent|incomplete) + 날짜 필터 + 페이징. soft-deleted 제외.
+    # 외부 식별자 public_key만 노출(내부 PK 비노출).
+    tab = tab if tab in ("active", "done") else "active"
+    where = ["coalesce(lc.deleted, false) = false", "coalesce(lc.status, 'active') = %s"]
+    args = [tab]
+    if date_from:
+        where.append("p.created_at >= %s"); args.append(date_from)
+    if date_to:
+        where.append("p.created_at <= %s"); args.append(date_to)
+    wsql = " AND ".join(where)
+    order = "p.created_at DESC" if sort != "incomplete" else "confirmed_n ASC, p.created_at DESC"
+    page = max(1, int(page)); page_size = min(100, max(1, int(page_size)))
+    offset = (page - 1) * page_size
+
+    base_from = ("FROM projects p "
+                 "LEFT JOIN project_lifecycle lc ON lc.project_pk = p.pk "
+                 "LEFT JOIN records ir ON ir.project_pk = p.pk AND ir.type = 'intake' "
+                 "LEFT JOIN record_versions rv ON rv.pk = ir.current_version_pk")
     with _conn() as c, c.cursor() as cur:
         cur.execute(
-            "SELECT p.public_key, p.created_at, rv.body "
-            "FROM projects p "
-            "LEFT JOIN records r ON r.project_pk = p.pk AND r.type = 'intake' "
-            "LEFT JOIN record_versions rv ON rv.pk = r.current_version_pk "
-            "ORDER BY p.created_at DESC LIMIT 100"
-        )
+            f"SELECT p.public_key, p.created_at, coalesce(lc.status,'active') AS status, "
+            f"(SELECT count(*) FROM records r WHERE r.project_pk = p.pk AND r.status = 'confirmed') AS confirmed_n, "
+            f"rv.body {base_from} WHERE {wsql} ORDER BY {order} LIMIT %s OFFSET %s",
+            args + [page_size, offset])
         rows = cur.fetchall()
+        cur.execute(f"SELECT count(*) {base_from} WHERE {wsql}", args)
+        total = cur.fetchone()[0]
     out = []
-    for public_key, created_at, body in rows:
+    for public_key, created_at, status, confirmed_n, body in rows:
         title = None
         if isinstance(body, dict):
             title = body.get("site_character") or (body.get("goal") or {}).get("statement")
-        out.append({"public_key": public_key, "created_at": str(created_at), "title": title or "(제목 없음)"})
-    return {"projects": out}
+        out.append({"public_key": public_key, "created_at": str(created_at), "status": status,
+                    "progress": {"confirmed": confirmed_n, "total": TOTAL_STEPS},
+                    "title": title or "(제목 없음)"})
+    return {"projects": out, "page": page, "page_size": page_size, "total": total,
+            "tab": tab, "sort": sort}
+
+
+def _set_lifecycle(public_key, **fields):
+    pk = _project_pk(public_key)
+    cols = ", ".join(fields.keys())
+    ph = ", ".join(["%s"] * len(fields))
+    upd = ", ".join(f"{k} = EXCLUDED.{k}" for k in fields)
+    with _conn() as c, c.cursor() as cur:
+        cur.execute(
+            f"INSERT INTO project_lifecycle (project_pk, {cols}, updated_at) VALUES (%s, {ph}, now()) "
+            f"ON CONFLICT (project_pk) DO UPDATE SET {upd}, updated_at = now()",
+            [pk] + list(fields.values()))
+    return pk
+
+
+@app.post("/projects/{public_key}/complete")
+def complete_project(public_key: str):
+    _set_lifecycle(public_key, status="done")
+    return {"public_key": public_key, "status": "done"}
+
+
+@app.post("/projects/{public_key}/reopen")
+def reopen_project(public_key: str):
+    _set_lifecycle(public_key, status="active")
+    return {"public_key": public_key, "status": "active"}
+
+
+@app.delete("/projects/{public_key}")
+def soft_delete_project(public_key: str):
+    _set_lifecycle(public_key, deleted=True)
+    return {"public_key": public_key, "deleted": True}
 
 
 @app.post("/projects")

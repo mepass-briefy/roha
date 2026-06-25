@@ -10,11 +10,20 @@ async function j(method, url, body) {
   return data;
 }
 
+function qs(params) {
+  const p = Object.entries(params || {}).filter(([, v]) => v !== undefined && v !== null && v !== "");
+  return p.length ? "?" + p.map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join("&") : "";
+}
+
+const enc = encodeURIComponent;
 export const api = {
-  listProjects: () => j("GET", "/projects"),
+  listProjects: (params) => j("GET", "/projects" + qs(params)),
   createProject: (payload) => j("POST", "/projects", payload),
-  run: (pk) => j("POST", `/projects/${encodeURIComponent(pk)}/run`),
-  status: (pk) => j("GET", `/projects/${encodeURIComponent(pk)}/status`),
-  records: (pk) => j("GET", `/projects/${encodeURIComponent(pk)}/records`),
-  approve: (pk) => j("POST", `/projects/${encodeURIComponent(pk)}/approve`),
+  run: (pk) => j("POST", `/projects/${enc(pk)}/run`),
+  status: (pk) => j("GET", `/projects/${enc(pk)}/status`),
+  records: (pk) => j("GET", `/projects/${enc(pk)}/records`),
+  approve: (pk) => j("POST", `/projects/${enc(pk)}/approve`),
+  complete: (pk) => j("POST", `/projects/${enc(pk)}/complete`),
+  reopen: (pk) => j("POST", `/projects/${enc(pk)}/reopen`),
+  remove: (pk) => j("DELETE", `/projects/${enc(pk)}`),
 };

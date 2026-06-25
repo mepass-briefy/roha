@@ -21,3 +21,6 @@ _run_discovery/
 node_modules/
 web/node_modules/
 web/dist/
+
+_srv.*
+_vite.*
