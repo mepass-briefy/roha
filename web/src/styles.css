@@ -116,6 +116,17 @@ input:focus, textarea:focus, select:focus { border-color:var(--primary); }
 ::placeholder { color:var(--text-3); opacity:1; }
 .hint { font-size:12px; color:var(--text-3); margin-top:2px; }
 
+/* 체크박스(디바이스 복수 선택) — 명세: 18px, radius 5px, checked=checked색 + 흰 체크 */
+.cb-list { display:flex; flex-direction:column; gap:2px; }
+.cb-row { display:flex; align-items:center; gap:11px; padding:9px 4px; cursor:pointer; border-radius:var(--r-sm); }
+.cb-row:hover { background:var(--raised); }
+.cb { width:18px; height:18px; border-radius:5px; border:1.5px solid var(--text-3); flex:none;
+  display:flex; align-items:center; justify-content:center; }
+.cb.on { background:var(--checked); border-color:var(--checked); }
+.cb .ico { width:12px; height:12px; stroke:#fff; stroke-width:3; }
+.cb-name { font-size:13px; font-weight:600; }
+.cb-desc { font-size:12px; color:var(--text-2); }
+
 /* 버튼 5종(명세): primary / neutral / outline / danger / danger-soft. ghost(배경없는 텍스트) 미사용.
    대비 규칙: 코랄은 brand=danger(빨강)라 주요 액션을 neutral(어두운 남색)로 바꿔 삭제와 구분. 인디고는 primary 그대로. */
 button { font-family:var(--font); cursor:pointer; }

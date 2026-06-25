@@ -11,6 +11,22 @@ const IconPlus = () => (
 const IconTrash = () => (
   <svg className="ico" viewBox="0 0 24 24"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6" /></svg>
 );
+const IconCheck = () => (
+  <svg className="ico" viewBox="0 0 24 24"><path d="M5 12l5 5L20 6" /></svg>
+);
+
+// 디바이스(복수 선택). 웹=PC 브라우저, 모바일웹=모바일 브라우저, 모바일=모바일 앱.
+const DEVICES = [
+  { key: "웹", desc: "PC 브라우저" },
+  { key: "모바일웹", desc: "모바일 브라우저" },
+  { key: "모바일", desc: "모바일 앱" },
+];
+// 디바이스 선택 -> discovery 호환 target_platform(web|mobile|both|미정) 파생.
+function devicesToPlatform(devices) {
+  const web = devices.includes("웹") || devices.includes("모바일웹");
+  const app = devices.includes("모바일");
+  return web && app ? "both" : app ? "mobile" : web ? "web" : "미정";
+}
 
 const NODE_LABELS = {
   intake: "입력", discovery: "Discovery", strategy: "전략", ux: "UX",
@@ -28,6 +44,7 @@ const KEY_LABELS = {
   sensitivity: "민감도", threat: "위협", mitigated_by: "완화 수단",
   features: "기능", priority: "우선순위", acceptance_criteria: "수용 기준", security_controls: "보안 통제",
   feature: "기능", source: "출처", open_questions: "확인 필요", provenance: "근거 표기",
+  devices: "디바이스", target_platform: "플랫폼(파생)",
 };
 const lab = (k) => KEY_LABELS[k] || k;
 const fmtDate = (s) => (s ? s.slice(0, 16).replace("T", " ") : "");
@@ -262,7 +279,8 @@ export default function App() {
   const [goal, setGoal] = useState("");
   const [context, setContext] = useState("");
   const [reqs, setReqs] = useState("");
-  const [platform, setPlatform] = useState("미정");
+  const [devices, setDevices] = useState([]);
+  const toggleDevice = (k) => setDevices((d) => (d.includes(k) ? d.filter((x) => x !== k) : [...d, k]));
 
   // 테마는 인디고 고정(index.html). 모드(light|dark)만 토글·저장.
   const [mode, setMode] = useState(() => (document.documentElement.getAttribute("data-mode") === "dark" ? "dark" : "light"));
@@ -283,7 +301,8 @@ export default function App() {
   });
   const create = () => withBusy(async () => {
     const payload = { site_character: goal.slice(0, 40), requirements: reqs.split("\n").map((x) => x.trim()).filter(Boolean),
-      goal: { statement: goal, details: {} }, context: context.trim() || null, target_platform: platform };
+      goal: { statement: goal, details: {} }, context: context.trim() || null,
+      devices, target_platform: devicesToPlatform(devices) };
     const res = await api.createProject(payload); setPk(res.public_key); await refresh(res.public_key); setNode("intake"); setView("node");
   });
   const runStep = () => withBusy(async () => { const res = await api.run(pk); setLastRun(res); await refresh(pk); if (res.ran) setNode(res.ran); });
@@ -338,10 +357,15 @@ export default function App() {
             <textarea value={context} onChange={(e) => setContext(e.target.value)} />
             <label>요구사항 <span className="opt">(선택, 줄마다 하나)</span></label>
             <textarea value={reqs} onChange={(e) => setReqs(e.target.value)} />
-            <label>Target Platform <span className="opt">(선택, 나중에 확정 가능)</span></label>
-            <select value={platform} onChange={(e) => setPlatform(e.target.value)}>
-              <option value="미정">미정 (나중에 협의해 확정)</option><option value="web">web</option><option value="mobile">mobile</option><option value="both">both</option>
-            </select>
+            <label>디바이스 <span className="opt">(선택, 복수 가능 · 나중에 확정 가능)</span></label>
+            <div className="cb-list">
+              {DEVICES.map((d) => (
+                <div key={d.key} className="cb-row" onClick={() => toggleDevice(d.key)}>
+                  <span className={`cb ${devices.includes(d.key) ? "on" : ""}`}>{devices.includes(d.key) && <IconCheck />}</span>
+                  <span><span className="cb-name">{d.key}</span> <span className="cb-desc">{d.desc}</span></span>
+                </div>
+              ))}
+            </div>
             <div className="row" style={{ marginTop: 16 }}>
               <button className="btn-primary" disabled={busy || !goal.trim()} onClick={create}>{busy ? "생성 중…" : "프로젝트 생성"}</button>
             </div>

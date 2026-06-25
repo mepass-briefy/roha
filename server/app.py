@@ -80,7 +80,8 @@ class CreateReq(BaseModel):
     requirements: list[str] = []
     goal: dict = {}                       # { statement, details } — discovery 입력
     context: str | None = None            # 고객·프로덕트 맥락(선택)
-    target_platform: str = "미정"         # web|mobile|both|미정 (입력값, fact)
+    target_platform: str = "미정"         # web|mobile|both|미정 (devices에서 파생, discovery 호환)
+    devices: list[str] = []               # 디바이스 복수 선택(웹|모바일웹|모바일). 사람용 풍부 표기
     seed_competitors: list[str] = []
     unique_angles: list[str] = []
     brand_tokens: dict = {}
