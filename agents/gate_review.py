@@ -10,10 +10,15 @@ Contract Compliance(각 에이전트 계약), Provenance(항목별 표기), Requ
 
 결과 등급(3단계):
   계약 위반 없음 + open_questions 없음 -> PASS
-  계약 위반 없음 + open_questions 존재 -> WARN
+  계약 위반 없음 + open_questions/품질 경고만 -> WARN
   계약 위반 존재 -> FAIL
 반환: {"status": "PASS|WARN|FAIL", "reasons": [...], "warnings": [...]}
-재생성 루프·agent 재실행·orchestrator 수정 금지. FAIL이면 사유만 보고한다.
+
+두 레벨 분리(backend·wireframe): 계약 위반=ERROR=reasons(FAIL, 차단) vs 품질 미달=WARN=warnings(통과, EXIT 0).
+에이전틱 루프가 없으므로 '지금 막으면 자동 복구 수단이 없는 것'만 ERROR로 한다.
+  ERROR(차단): 빈 산출(entities/endpoints/screens=[]), 발명(source 근거 위반·미존재 참조), 식별자 3종 결손, 외부 public_key 위반.
+  WARN(통과): 빈약(fields 부족·관계 미모델링), 커버리지 일부 결손, 권고(네이밍 등).
+재생성 루프·agent 재실행·orchestrator 수정 금지. FAIL(ERROR)이면 사유만 보고한다.
 """
 
 import copy
@@ -47,6 +52,108 @@ def _validator(record_type):
 def _result(reasons, warnings):
     status = FAIL if reasons else (WARN if warnings else PASS)
     return {"status": status, "reasons": reasons, "warnings": warnings}
+
+
+def _ident_empty(val):
+    return val is None or (isinstance(val, str) and not val.strip()) or (isinstance(val, (dict, list)) and not val)
+
+
+def contract_levels(record_type, body):
+    """계약 위반=ERROR(reasons, 차단) vs 품질 미달=WARN(warnings, 통과)을 항목별로 분리한다.
+    backend·wireframe 공통 규칙은 공유, 산출물별 항목(entities/endpoints vs screens)만 분기.
+    게이트는 body만 본다(입력 미참조): 멤버십 발명(입력 대조)은 producer 교차검증에서 차단됨.
+    여기서 다루는 발명은 body 내부 규칙(source 형식 / wireframe는 palette·feature_index 멤버십).
+    에이전틱 루프가 없으므로 '지금 막으면 자동 복구 수단이 없는 것'만 ERROR.
+    """
+    errors, warns = [], []
+
+    if record_type == "backend":
+        api = body.get("api_spec") or {}
+        endpoints = api.get("endpoints") or []
+        entities = body.get("entities") or []
+        # 1) 빈 산출 = ERROR(하류 계약 깨짐)
+        if not entities:
+            errors.append("[빈 산출] backend entities=[] — 핵심 기능이 있으면 엔티티는 반드시 존재")
+        if not endpoints:
+            errors.append("[빈 산출] backend endpoints=[] — 핵심 기능이 있으면 엔드포인트는 반드시 존재")
+        entity_feats = set()
+        for e in entities:
+            nm = e.get("name", "?")
+            src = str(e.get("source", ""))
+            # 2) 발명(형식): source는 feature:/ux: 근거
+            if src.startswith("feature:") or src.startswith("ux:"):
+                entity_feats.add(src.split(":", 1)[1])
+            else:
+                errors.append(f"[발명] entity '{nm}' source가 feature:/ux: 근거 아님('{src}')")
+            # 3) 식별자 3종 누락
+            ids = e.get("identifiers") or {}
+            for k in ("pk", "business_key", "public_key"):
+                if _ident_empty(ids.get(k)):
+                    errors.append(f"[식별자 3종] entity '{nm}' '{k}' 결손")
+            # 5) 품질: 도메인 필드 빈약
+            if len(e.get("fields") or []) < 2:
+                warns.append(f"[품질] entity '{nm}' 도메인 필드 빈약(fields {len(e.get('fields') or [])}개)")
+        # 5) 품질: 관계 미모델링
+        if entities and not any((e.get("relations") or []) for e in entities):
+            warns.append("[품질] 엔티티 간 관계(relations) 미모델링")
+        for ep in endpoints:
+            eid = ep.get("endpoint_id", "?")
+            # 2) 발명/Traceability: feature_ref·security_ref 필수
+            if not ep.get("feature_ref"):
+                errors.append(f"[발명] endpoint '{eid}' feature_ref 결손(Traceability)")
+            if not ep.get("security_ref"):
+                errors.append(f"[발명] endpoint '{eid}' security_ref 결손(Traceability)")
+            # 4) 외부 public_key: 경로 파라미터는 {public_key}만, id/pk 노출 금지
+            for seg in str(ep.get("path", "")).split("/"):
+                if seg.startswith("{") and seg.endswith("}"):
+                    if seg != "{public_key}":
+                        errors.append(f"[외부 public_key] endpoint '{eid}' 경로 파라미터 '{seg}'(외부는 public_key만)")
+                elif seg in ("id", "pk"):
+                    errors.append(f"[외부 public_key] endpoint '{eid}' 경로에 내부 식별자 '{seg}' 노출")
+        # 6) 커버리지(품질): 엔드포인트만 있고 대응 엔티티 없는 기능(일부 결손)
+        ep_feats = {ep.get("feature_ref") for ep in endpoints if ep.get("feature_ref")}
+        uncov = sorted(f for f in ep_feats if f and f not in entity_feats)
+        if entities and uncov:
+            warns.append(f"[커버리지] 엔티티 없는 기능(엔드포인트만): {uncov}")
+
+    elif record_type == "wireframe":
+        screens = body.get("screens") or []
+        palette = set(body.get("design_component_palette") or [])
+        feat_index = set(body.get("feature_index") or [])
+        # 1) 빈 산출 = ERROR
+        if not screens:
+            errors.append("[빈 산출] wireframe screens=[] — 핵심 기능이 있으면 화면은 반드시 존재")
+        covered = set()
+        for s in screens:
+            nm = s.get("screen", "?")
+            src = str(s.get("source", ""))
+            origin = s.get("origin")
+            # 2) 발명(형식): 핵심=ux:/feature:, 파생=derived:
+            if origin in ("fact", "human"):
+                if not (src.startswith("ux:") or src.startswith("feature:")):
+                    errors.append(f"[발명] 핵심 화면 '{nm}' source가 ux:/feature: 근거 아님('{src}')")
+            else:
+                if not src.startswith("derived:"):
+                    errors.append(f"[발명] 파생 화면 '{nm}' source가 derived: 아님('{src}')")
+            secs = s.get("sections") or []
+            if not secs:
+                warns.append(f"[품질] 화면 '{nm}' 섹션 없음")
+            for sec in secs:
+                # 2) 발명(멤버십, body 내부): components⊆palette, feature_refs⊆feature_index
+                for c in sec.get("components", []):
+                    if c not in palette:
+                        errors.append(f"[발명] 화면 '{nm}' 컴포넌트 '{c}'가 palette에 없음")
+                for fr in sec.get("feature_refs", []):
+                    if fr not in feat_index:
+                        errors.append(f"[발명] 화면 '{nm}' 기능참조 '{fr}'가 feature_index에 없음")
+                    else:
+                        covered.add(fr)
+        # 6) 커버리지(품질): 어떤 화면에도 배치 안 된 기능(일부 결손)
+        uncov = sorted(f for f in feat_index if f not in covered)
+        if screens and uncov:
+            warns.append(f"[커버리지] 화면에 배치되지 않은 기능: {uncov}")
+
+    return errors, warns
 
 
 def run_review_gate(record_type, body):
@@ -132,6 +239,13 @@ def run_review_gate(record_type, body):
     # Provenance: 항목별 표기 존재(각 에이전트 계약 공통)
     if not body.get("provenance"):
         reasons.append("Provenance 표기 없음(계약)")
+
+    # backend·wireframe: 계약 위반=ERROR(reasons, 차단) vs 품질 미달=WARN(warnings, 통과) 항목별 분리.
+    # (1 빈 산출 / 2 발명 / 3 식별자 3종 / 4 외부 public_key = ERROR. 5 빈약 / 6 커버리지 = WARN.)
+    if record_type in ("backend", "wireframe"):
+        errs, qwarns = contract_levels(record_type, body)
+        reasons.extend(errs)
+        warnings.extend(qwarns)
 
     # open_questions 존재는 WARN
     warnings.extend(body.get("open_questions", []) or [])

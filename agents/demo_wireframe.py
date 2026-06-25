@@ -159,4 +159,9 @@ if os.environ.get("WIREFRAME_MODE") == "real":
     print("컴포넌트 발명 없음:", comp_ok, "| 기능 참조 발명 없음:", fref_ok)
     assert len(screens) > 0, "features가 있는데 screens가 비었음(빈 화면 문제)"
     assert src_ok, "screen source 근거 위반"
-    print("[real] 검증 통과(validate 포함, 빈 화면 없음)")
+    # 새 게이트 레벨 분리: real 정상 산출은 ERROR 0(FAIL 아님)
+    import gate_review
+    gr = gate_review.run_review_gate("wireframe", rb)
+    print("게이트(레벨 분리): status =", gr["status"], "| ERROR 수 =", len(gr["reasons"]))
+    assert gr["status"] != "FAIL", f"real 정상 산출이 FAIL: {gr['reasons']}"
+    print("[real] 검증 통과(validate + 게이트 ERROR 0, 빈 화면 없음)")

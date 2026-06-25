@@ -192,4 +192,9 @@ if os.environ.get("BACKEND_MODE") == "real":
     pub_only = all(('{' not in seg) or seg == '{public_key}' for ep in eps for seg in ep['path'].split('/'))
     print("(d) 식별자 3종 + 외부 public_key만:", key3 and pub_only)
     assert len(ents) > 0 and len(eps) > 0 and src_ok and key3 and pub_only
-    print("[real] 검증 통과(Pydantic + 발명금지 교차검증 포함)")
+    # 새 게이트 레벨 분리: real 정상 산출은 ERROR 0(FAIL 아님)
+    import gate_review
+    gr = gate_review.run_review_gate("backend", rb)
+    print("게이트(레벨 분리): status =", gr["status"], "| ERROR 수 =", len(gr["reasons"]))
+    assert gr["status"] != "FAIL", f"real 정상 산출이 FAIL: {gr['reasons']}"
+    print("[real] 검증 통과(Pydantic + 발명금지 교차검증 + 게이트 ERROR 0)")
