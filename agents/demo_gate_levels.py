@@ -143,23 +143,23 @@ good_ds = ds_agent.produce({"intake": {"references": [
     "strategy": {}, "ux": {}})
 print("\n--- [6/7/8] 회귀: 정상 design_system은 ERROR 0 ---")
 gds = gate("design_system", good_ds); show("design_system(인디고)", gds)
-print("  component 13종:", len(good_ds["component"]), "| WARN 예:", [w for w in gds["warnings"] if w.startswith("[")][:2])
+print("  component 13종:", len(good_ds["component_specs"]), "| WARN 예:", [w for w in gds["warnings"] if w.startswith("[")][:2])
 assert gds["status"] != "FAIL", "정상 design_system이 FAIL이면 안 됨"
-assert len(good_ds["component"]) == 13, "컴포넌트 13종이어야 함"
+assert len(good_ds["component_specs"]) == 13, "컴포넌트 13종이어야 함"
 
 print("\n--- [7] 음성 2종(design_system) -> 각각 FAIL ---")
 # (a) 빈 component
-da = copy.deepcopy(good_ds); da["component"] = []
-rda = gate("design_system", da); show("(a) component=[]", rda)
+da = copy.deepcopy(good_ds); da["component_specs"] = []
+rda = gate("design_system", da); show("(a) component_specs=[]", rda)
 assert rda["status"] == "FAIL" and has_tag(rda, "[빈 산출]")
 # (b) 하드코딩 색(토큰 대신 hex)
 db = copy.deepcopy(good_ds)
-db["component"][0]["states"]["enabled"]["bg"] = "#FF0000"
+db["component_specs"][0]["states"]["enabled"]["bg"] = "#FF0000"
 rdb = gate("design_system", db); show("(b) 하드코딩 색", rdb)
 assert rdb["status"] == "FAIL" and has_tag(rdb, "[하드코딩 색]")
 
 print("\n--- [6] 색 역할 토큰 참조 확인(토글->checked, 탭->tab, 사이드바->menu-sel) ---")
-cmap = {c["component"]: c for c in good_ds["component"]}
+cmap = {c["component"]: c for c in good_ds["component_specs"]}
 tog = cmap["toggle"]["states"]["on"]["bg"]; tab = cmap["tab"]["states"]["active"]
 side = cmap["sidebar"]["states"]["nav-active"]["bg"]
 print("  toggle.on.bg =", tog, "| tab.active =", tab, "| sidebar.nav-active.bg =", side)

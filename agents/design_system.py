@@ -500,6 +500,12 @@ def _build_body(intake, strategy, ux):
     open_questions.append("pattern 레이어: 근거(features 도메인 상태) 없음 -> 보류(자리만)")
     open_questions.append("motion 레이어: 근거 없음 -> 미정의")
 
+    # 하류(wireframe·frontend) 소비 형상 정렬: 엔진 산출(tokens)을 키만 투영한다. 값·결정성 불변.
+    # token은 component uses_tokens가 참조하는 full dotted key와 동일해야 멤버십이 성립한다.
+    color_tokens = [{"token": t["token_key"]} for t in tokens if t["token_key"].startswith("color.")]
+    spacing_tokens = [{"token": t["token_key"]} for t in tokens if t["token_key"].startswith("spacing.")]
+    radius_tokens = [{"token": t["token_key"]} for t in tokens if t["token_key"].startswith("radius.")]
+
     body = {
         "seed": {"primary": seed["primary"], "secondary": seed["secondary"],
                  "font_family": seed["font_family"], "icon_pack": seed["icon_pack"],
@@ -507,7 +513,10 @@ def _build_body(intake, strategy, ux):
         "foundation": {"color": color, "surface_tones": surface_tones,
                        "typography": typography, "spacing": spacing, "radius": radius},
         "semantic": {"state_mapping": state_mapping, "ui_intent": ui_intent},
-        "component": component,
+        "component_specs": component,
+        "color_tokens": color_tokens,
+        "spacing": spacing_tokens,
+        "radius": radius_tokens,
         "pattern": [],
         "governance": governance,
         "tokens": tokens,
@@ -533,7 +542,7 @@ def _build_body(intake, strategy, ux):
 
 def validate(body: dict) -> dict:
     """재정의 계약을 코드로 강제한다. 위반 시 raise."""
-    required = {"seed", "foundation", "semantic", "component", "pattern",
+    required = {"seed", "foundation", "semantic", "component_specs", "pattern",
                 "governance", "tokens", "reference", "open_questions", "provenance"}
     missing = required - set(body)
     if missing:
@@ -556,7 +565,7 @@ def validate(body: dict) -> dict:
         raise ValueError("provenance.tokens는 per_token이어야 함")
 
     # E12: 컴포넌트 6종 구조 보존(발명 금지)
-    comps = [c["component"] for c in body["component"]]
+    comps = [c["component"] for c in body["component_specs"]]
     if set(comps) != set(PRIMITIVES):
         raise ValueError(f"컴포넌트 13종 불변 위반: {comps} (기대 {list(PRIMITIVES)})")
 

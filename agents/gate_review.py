@@ -190,10 +190,10 @@ def contract_levels(record_type, body):
                 return any(_has_hex(v) for v in obj)
             return False
 
-        comps = body.get("component") or []
+        comps = body.get("component_specs") or []
         # 1) 빈 산출 = ERROR
         if not comps:
-            errors.append("[빈 산출] design_system component=[] — 컴포넌트가 비어선 안 됨")
+            errors.append("[빈 산출] design_system component_specs=[] - 컴포넌트가 비어선 안 됨")
         for c in comps:
             nm = c.get("component", "?")
             # 2) 하드코딩 색 = ERROR: 컴포넌트는 토큰 키만 참조(states·uses_tokens에 hex 직접 금지)

@@ -45,11 +45,11 @@ prim = next(t for t in bt["tokens"] if t["token_key"] == "color.light.primary")
 fontt = next(t for t in bt["tokens"] if t["token_key"] == "font.family")
 print("color.light.primary origin:", prim["origin"], "source_reference_id:", prim["source_reference_id"])
 print("font.family origin:", fontt["origin"], "source_reference_id:", fontt["source_reference_id"])
-print("컴포넌트 6종 불변:", [c["component"] for c in bt["component"]] == [c["component"] for c in b0["component"]])
+print("컴포넌트 6종 불변:", [c["component"] for c in bt["component_specs"]] == [c["component"] for c in b0["component_specs"]])
 print("터치타겟 44px 불변:", bt["governance"]["accessibility"]["min_touch_target"] == "44x44px")
 print("spacing 체계 불변:", [s["token"] for s in bt["foundation"]["spacing"]] == [s["token"] for s in b0["foundation"]["spacing"]])
 assert prim["origin"] == "reference-token" and prim["source_reference_id"] == "REF-001"
-assert [c["component"] for c in bt["component"]] == [c["component"] for c in b0["component"]]
+assert [c["component"] for c in bt["component_specs"]] == [c["component"] for c in b0["component_specs"]]
 
 print("\n=== 3. 화이트리스트 밖 토큰 변경 시도 -> 무시 + open_questions ===")
 bw = produce([{"reference_id": "REF-002", "type": "token",
@@ -212,9 +212,9 @@ def make(seed):
 
 indigo = make("#3F51B5")
 coral = make("#FF5E5E")
-print("component 수:", len(indigo["component"]), "(13 기대):", [c["component"] for c in indigo["component"]])
-assert len(indigo["component"]) == 13
-cmap = {c["component"]: c for c in indigo["component"]}
+print("component 수:", len(indigo["component_specs"]), "(13 기대):", [c["component"] for c in indigo["component_specs"]])
+assert len(indigo["component_specs"]) == 13
+cmap = {c["component"]: c for c in indigo["component_specs"]}
 print("toggle->checked:", cmap["toggle"]["states"]["on"]["bg"] == "color.light.checked")
 print("checkbox->checked:", cmap["checkbox"]["states"]["checked"]["bg"] == "color.light.checked")
 print("tab->tab-bg/fg:", cmap["tab"]["states"]["active"] == {"bg": "color.light.tab-bg", "fg": "color.light.tab-fg"})
