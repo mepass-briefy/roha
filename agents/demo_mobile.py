@@ -4,7 +4,7 @@ intake -> strategy -> ux -> security -> design_system -> features -> wireframe -
 계약 준수, 제약 강제, 전파, 모바일 고유 요소를 확인한다.
 오프라인 모드(결정적). site-build.v9 워크플로(mobile 노드)를 사용한다. 기존 데모/워크플로는 그대로 둔다.
 """
-import sys, shutil, json, copy
+import os, sys, shutil, json, copy
 from pathlib import Path
 
 BASE = Path(__file__).resolve().parent.parent
@@ -181,3 +181,61 @@ blocked = mobile_agent.produce({"wireframe": wf_body, "design_system": ds_no_tok
                                artifact_dir=ARTIFACT_DIR)
 print("차단 후 screens 수:", len(blocked["screens"]), "(0이면 전부 차단)")
 print("Blocking open_questions:", [q for q in blocked["open_questions"] if "Blocking" in q])
+
+# [7] real 산출(MOBILE_MODE=real일 때만). frontend와 동일: 계약 형상 일관 입력(다중 화면 인플루언서/풋살)으로 단발 real 확인.
+if os.environ.get("MOBILE_MODE") == "real":
+    import gate_review
+    print("\n=== [real] 화면·컴포넌트 기반 모바일 산출(계약 형상 일관 입력) ===")
+    WF_IN = {
+        "screens": [
+            {"screen": "매치 피드", "sections": [{"section": "피드", "components": ["card", "button"], "feature_refs": ["매치 예약"]}]},
+            {"screen": "인플루언서 프로필", "sections": [{"section": "프로필", "components": ["card", "table"], "feature_refs": ["개인 신청"]}]},
+        ],
+        "design_component_palette": ["card", "table", "button", "input", "nav"],
+        "navigation": {"pattern": "bottom-tab"}, "open_questions": [],
+    }
+    DS_IN = {
+        "component_specs": [
+            {"component": "card", "uses_tokens": ["color-surface", "sp-2"]},
+            {"component": "table", "uses_tokens": ["color-primary", "r-md"]},
+            {"component": "button", "uses_tokens": ["color-primary"]},
+            {"component": "input", "uses_tokens": ["color-outline", "r-sm"]},
+            {"component": "nav", "uses_tokens": ["color-surface"]},
+        ],
+        "color_tokens": [{"token": "color-primary"}, {"token": "color-surface"}, {"token": "color-outline"},
+                         {"token": "color-surface-dark", "mode": "dark"}],
+        "spacing": [{"token": "sp-2"}], "radius": [{"token": "r-md"}, {"token": "r-sm"}],
+        "accessibility": {"min_touch_target": "44x44px", "safe_area": {"top": 44, "bottom": 34}},
+        "open_questions": [],
+    }
+    def _ep(eid, method, path, feat, succ, err):
+        return {"endpoint_id": eid, "method": method, "path": path, "feature_ref": feat, "security_ref": "ctrl",
+                "success_cases": [{"code": succ, "http_status": 200, "description": "d"}],
+                "error_cases": [{"code": err, "http_status": 400, "description": "d"}]}
+    BK_IN = {"api_spec": {"endpoints": [
+        _ep("ep-matches-list", "GET", "/api/v1/matches", "매치 예약", "OK", "VALIDATION_ERROR"),
+        _ep("ep-applications-get", "GET", "/api/v1/applications/{public_key}", "개인 신청", "OK", "NOT_FOUND"),
+    ]}, "open_questions": []}
+    disc = {"goal_interpretation": {"inferred_dimensions": [{"dimension": "모바일 예약 경험", "basis": "goal"}],
+                                    "candidate_metrics": [], "assumptions": []},
+            "requirement_normalization": [{"id": "R-01", "statement": "매치 예약", "origin": "explicit"},
+                                          {"id": "R-02", "statement": "개인 신청", "origin": "explicit"}]}
+    rb = mobile_agent.produce({"wireframe": WF_IN, "design_system": DS_IN, "backend": BK_IN,
+                               "ux": {}, "discovery": disc}, llm=mobile_agent.real_llm, artifact_dir=ARTIFACT_DIR)
+    rscr = rb["screens"]
+    print(f"screens {len(rscr)}개:")
+    for s in rscr:
+        print(f"  {s['screen_ref']} | comps={[c['component_ref'] for c in s['components']]} | "
+              f"calls={[d['endpoint_ref'] for d in s['data_calls']]} | tokens={s['uses_tokens'][:4]} | "
+              f"nav={(s['navigation'] or {}).get('pattern') if s['navigation'] else None} | touch={bool(s['touch_target'])}")
+    grr = gate_review.run_review_gate("mobile", rb)
+    print("real 게이트 status =", grr["status"], "| ERROR 수 =", len(grr["reasons"]))
+    for e in grr["reasons"]:
+        print("  ERROR:", e)
+    import re as _re
+    hard = [t for s in rscr for t in s["uses_tokens"] if _re.search(r"#[0-9A-Fa-f]{3,8}", str(t))]
+    comp_sets = [tuple(sorted(c["component_ref"] for c in s["components"])) for s in rscr]
+    distinct = len(set(comp_sets)) > 1 if len(rscr) > 1 else True
+    print("(a) 비어있지 않음:", len(rscr) > 0, "| (b) 화면별 상이:", distinct, "| (d) 하드코딩 색:", hard or "없음")
+    assert len(rscr) > 0 and grr["status"] != "FAIL" and not hard
+    print("[real] 검증 통과(Pydantic 멤버십 + 게이트 ERROR 0, 하드코딩 0)")

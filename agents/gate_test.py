@@ -26,6 +26,9 @@ def _pydantic_model(record_type):
     if record_type == "frontend":
         import frontend
         return frontend.FrontendBody
+    if record_type == "mobile":
+        import mobile
+        return mobile.MobileBody
     return None
 
 

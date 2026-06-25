@@ -48,6 +48,8 @@ def _validator(record_type):
         import backend; return ("model", backend.BackendBody)
     if record_type == "frontend":
         import frontend; return ("model", frontend.FrontendBody)
+    if record_type == "mobile":
+        import mobile; return ("model", mobile.MobileBody)
     return (None, None)
 
 
@@ -265,6 +267,56 @@ def contract_levels(record_type, body):
             if uncov:
                 warns.append(f"[커버리지] 미구현 화면(wireframe에 있으나 미생성): {uncov}")
 
+    elif record_type == "mobile":
+        # mobile은 frontend와 동일 계약(멤버십 인덱스가 body에 있음). 발명-가드는 인덱스 멤버십(mobile.py MobileBody).
+        import re as _re
+        _HEXLIT = _re.compile(r"#[0-9A-Fa-f]{3,8}\b")
+        screens = body.get("screens") or []
+        screen_index = set(body.get("screen_index") or [])
+        palette = set(body.get("component_palette") or [])
+        eps = set(body.get("endpoint_index") or [])
+        codes = set(body.get("outcome_code_index") or [])
+        tokens = set(body.get("token_index") or [])
+        # 1) 빈 산출 = ERROR (구현할 wireframe 화면이 있는데 screens 비었으면)
+        if not screens and screen_index:
+            errors.append("[빈 산출] mobile screens=[] - wireframe 화면이 있으면 화면 산출은 반드시 존재")
+        produced = set()
+        for s in screens:
+            sref = s.get("screen_ref", "?")
+            produced.add(sref)
+            # 2) 발명(멤버십): screen_ref/component_ref/endpoint_ref/outcome/uses_tokens/nav target
+            if sref not in screen_index:
+                errors.append(f"[발명] screen_ref '{sref}'가 screen_index(wireframe)에 없음")
+            for c in s.get("components", []):
+                if c.get("component_ref") not in palette:
+                    errors.append(f"[발명] 화면 '{sref}' component_ref '{c.get('component_ref')}'가 palette에 없음")
+            for dc in s.get("data_calls", []):
+                if dc.get("endpoint_ref") not in eps:
+                    errors.append(f"[발명] 화면 '{sref}' endpoint_ref '{dc.get('endpoint_ref')}'가 backend에 없음")
+                for o in dc.get("outcome_mapping", []):
+                    if o.get("code") not in codes:
+                        errors.append(f"[발명] 화면 '{sref}' outcome code '{o.get('code')}'가 backend code에 없음")
+                # 4) 외부 public_key: path_params 내부 PK 금지
+                for p in dc.get("path_params", []):
+                    if p in ("id", "pk") or str(p).endswith(("_id", "_pk")):
+                        errors.append(f"[외부 public_key] 화면 '{sref}' path_params '{p}' 내부 식별자(외부는 public_key만)")
+            for t in s.get("uses_tokens", []):
+                if _HEXLIT.search(str(t)):
+                    errors.append(f"[하드코딩 색] 화면 '{sref}' uses_tokens에 hex '{t}'(토큰명만 허용)")
+                elif t not in tokens:
+                    errors.append(f"[발명] 화면 '{sref}' uses_tokens '{t}'가 token_index에 없음")
+            nav = s.get("navigation")
+            if isinstance(nav, dict) and nav.get("target_screen_ref") and nav["target_screen_ref"] not in screen_index:
+                errors.append(f"[발명] 화면 '{sref}' navigation target '{nav['target_screen_ref']}'가 screen_index에 없음")
+            # 5) 품질: 화면 산출 빈약
+            if not s.get("components") and not s.get("data_calls"):
+                warns.append(f"[품질] 화면 '{sref}' 산출 빈약(components·data_calls 없음)")
+        # 6) 커버리지(품질): 일부 wireframe 화면 미구현(전부 결손은 위 ERROR)
+        if screens:
+            uncov = sorted(x for x in screen_index if x not in produced)
+            if uncov:
+                warns.append(f"[커버리지] 미구현 화면(wireframe에 있으나 미생성): {uncov}")
+
     return errors, warns
 
 
@@ -354,7 +406,7 @@ def run_review_gate(record_type, body):
 
     # backend·wireframe·features·design_system: 계약 위반=ERROR(reasons, 차단) vs 품질 미달=WARN(warnings, 통과) 항목별 분리.
     # (빈 산출 / 발명 / 식별자 3종(backend) / 외부 public_key(backend) / 하드코딩 색·WCAG(design_system) = ERROR. 빈약 / 커버리지 / 상태 누락 = WARN.)
-    if record_type in ("backend", "wireframe", "features", "design_system", "frontend"):
+    if record_type in ("backend", "wireframe", "features", "design_system", "frontend", "mobile"):
         errs, qwarns = contract_levels(record_type, body)
         reasons.extend(errs)
         warnings.extend(qwarns)

@@ -25,6 +25,7 @@ sys.path.insert(0, str(BASE / "agents"))
 sys.path.insert(0, str(BASE / "db"))
 
 from orchestrator import Store, Orchestrator, canonical_hash
+import discovery as discovery_agent
 import strategy as strategy_agent
 import ux as ux_agent
 import security as security_agent
@@ -33,6 +34,7 @@ import features as features_agent
 import wireframe as wireframe_agent
 import backend as backend_agent
 import frontend as frontend_agent
+import mobile as mobile_agent
 import gate_test
 import gate_review
 
@@ -50,6 +52,7 @@ TENANT_TABLES = ("record_validations", "artifacts", "record_versions", "runs", "
 
 def build_producers(art_dir: Path):
     """real/mock 스위치는 기존 환경변수 패턴을 따른다(각 에이전트 무수정)."""
+    disc_llm = discovery_agent.real_llm if os.environ.get("DISCOVERY_MODE") == "real" else discovery_agent.offline_llm
     strat_llm = strategy_agent.real_llm if os.environ.get("STRATEGY_MODE") == "real" else strategy_agent.offline_llm
     ux_llm = ux_agent.real_llm if os.environ.get("UX_MODE") == "real" else ux_agent.offline_llm
     sec_llm = security_agent.real_llm if os.environ.get("SECURITY_MODE") == "real" else security_agent.offline_llm
@@ -57,11 +60,13 @@ def build_producers(art_dir: Path):
     wf_llm = wireframe_agent.real_llm if os.environ.get("WIREFRAME_MODE") == "real" else wireframe_agent.offline_llm
     be_llm = backend_agent.real_llm if os.environ.get("BACKEND_MODE") == "real" else backend_agent.offline_llm
     fe_llm = frontend_agent.real_llm if os.environ.get("FRONTEND_MODE") == "real" else frontend_agent.offline_llm
+    mb_llm = mobile_agent.real_llm if os.environ.get("MOBILE_MODE") == "real" else mobile_agent.offline_llm
     if os.environ.get("FEATURES_MODE") == "real":
         feat_llm = features_agent.make_real_llm(use_search=(os.environ.get("FEATURES_SEARCH") == "on"))
     else:
         feat_llm = features_agent.offline_llm
     return {
+        "discovery": discovery_agent.make_producer(disc_llm),
         "strategy": strategy_agent.make_producer(strat_llm),
         "ux": ux_agent.make_producer(ux_llm),
         "security": security_agent.make_producer(sec_llm),
@@ -70,6 +75,7 @@ def build_producers(art_dir: Path):
         "wireframe": wireframe_agent.make_producer(wf_llm),
         "backend": backend_agent.make_producer(be_llm, artifact_dir=art_dir),
         "frontend": frontend_agent.make_producer(fe_llm, artifact_dir=art_dir),
+        "mobile": mobile_agent.make_producer(mb_llm, artifact_dir=art_dir),
     }
 
 

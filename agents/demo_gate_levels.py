@@ -219,5 +219,55 @@ rfecov = gate("frontend", fecov); show("(w2) 일부 커버리지 결손", rfecov
 print("  -> WARN:", [w for w in rfecov["warnings"] if "[커버리지]" in w])
 assert rfecov["status"] == "WARN" and not rfecov["reasons"]
 
+print("\n=== mobile 게이트 레벨(frontend와 동일 틀, 멤버십=body 인덱스) ===")
+def mb_screen(**over):
+    s = {"screen_ref": "메인", "origin": "fact",
+         "components": [{"component_ref": "card", "section": "s"}],
+         "data_calls": [{"endpoint_ref": "ep-applications-list", "method": "GET",
+                         "path_params": ["public_key"], "outcome_mapping": [{"code": "OK", "ui_hint": "x"}]}],
+         "states": None, "uses_tokens": ["color-accent"], "navigation": None,
+         "touch_target": None, "dark_mode": None, "safe_area": None}
+    s.update(over)
+    return s
+
+def mb_body(**over):
+    b = {"platform": "mobile", "screen_index": ["메인"], "endpoint_index": ["ep-applications-list"],
+         "outcome_code_index": ["OK", "VALIDATION_ERROR"], "component_palette": ["card", "button"],
+         "token_index": ["color-accent", "r-md"], "screens": [mb_screen()],
+         "artifact_refs": [], "explicit_not_implemented": [], "provenance": {"screens": "per_item"}}
+    b.update(over)
+    return b
+
+good_mb = mb_body()
+print("\n--- [10] 회귀: 정상 mobile은 ERROR 0 ---")
+gmb = gate("mobile", good_mb); show("mobile(정상)", gmb)
+assert gmb["status"] != "FAIL"
+
+print("\n--- [8] 음성 3종(mobile) -> 각각 FAIL ---")
+# (a) 빈 산출(구현할 화면 있는데 screens=[])
+mba = mb_body(screens=[]); rmba = gate("mobile", mba); show("(a) screens=[]", rmba)
+assert rmba["status"] == "FAIL" and has_tag(rmba, "[빈 산출]")
+# (b) 발명(멤버십 위반: palette 밖 component)
+mbb = mb_body(screens=[mb_screen(components=[{"component_ref": "carousel", "section": "s"}])])
+rmbb = gate("mobile", mbb); show("(b) 발명 component_ref", rmbb)
+assert rmbb["status"] == "FAIL" and has_tag(rmbb, "[발명]")
+# (c) 하드코딩 색(uses_tokens에 hex)
+mbc = mb_body(screens=[mb_screen(uses_tokens=["#FF0000"])])
+rmbc = gate("mobile", mbc); show("(c) 하드코딩 색", rmbc)
+assert rmbc["status"] == "FAIL" and has_tag(rmbc, "[하드코딩 색]")
+
+print("\n--- [8] WARN: 빈약/일부 커버리지 -> 통과 ---")
+mbw = mb_body(screen_index=["메인", "빈화면"],
+              screens=[mb_screen(), {"screen_ref": "빈화면", "origin": "fact", "components": [],
+                                     "data_calls": [], "states": None, "uses_tokens": [], "navigation": None,
+                                     "touch_target": None, "dark_mode": None, "safe_area": None}])
+rmbw = gate("mobile", mbw); show("(w1) 빈약 화면", rmbw)
+print("  -> WARN:", [w for w in rmbw["warnings"] if "[품질]" in w])
+assert rmbw["status"] == "WARN" and not rmbw["reasons"]
+mbcov = mb_body(screen_index=["메인", "미구현화면"], screens=[mb_screen()])
+rmbcov = gate("mobile", mbcov); show("(w2) 일부 커버리지 결손", rmbcov)
+print("  -> WARN:", [w for w in rmbcov["warnings"] if "[커버리지]" in w])
+assert rmbcov["status"] == "WARN" and not rmbcov["reasons"]
+
 shutil.rmtree(TMP)
 print("\nDONE")
