@@ -3,7 +3,7 @@ UX Agent E2E 검증.
 intake -> strategy(사람 승인) -> ux 까지 돌려 계약 준수, 제약 강제, orchestrator 결합을 확인한다.
 오프라인 모드(결정적). site-build.v2 워크플로(ux 노드 추가)를 사용한다. v1과 demo_strategy는 그대로 둔다.
 """
-import sys, shutil, json
+import os, sys, shutil, json
 from pathlib import Path
 
 BASE = Path(__file__).resolve().parent.parent
@@ -113,3 +113,55 @@ try:
     print("FAIL: 통과되면 안 됨")
 except ValueError as e:
     print("정상 차단:", e)
+
+
+# ── [real] discovery 기반 사용자 관점 구조화 검증(UX_MODE=real일 때만) ──
+INFLUENCER_INTAKE = {
+    "site_character": "인플루언서 캠페인 관리",
+    "requirements": ["인플루언서 캠페인 추적", "광고주 의뢰 계약금", "국내외 통화 정산",
+                     "인플루언서 검증", "계약관리·정산 어드민", "권한별 회원가입"],
+    "target_platform": "both",
+}
+INFLUENCER_DISCOVERY = {
+    "goal_interpretation": {
+        "inferred_dimensions": [{"dimension": "매칭 성사·정산 신뢰", "basis": "goal.statement"}],
+        "candidate_metrics": [{"metric": "캠페인 완료율", "dimension": "매칭 성사·정산 신뢰",
+                               "rationale": "활성도 해석", "confidence": "low"}],
+        "assumptions": [],
+    },
+    "requirement_normalization": [
+        {"id": "R-01", "statement": "인플루언서 캠페인 진행을 추적한다", "origin": "explicit"},
+        {"id": "R-02", "statement": "광고주 의뢰에 계약금을 건다", "origin": "explicit"},
+        {"id": "R-03", "statement": "국내외 인플루언서를 현지 통화로 정산한다", "origin": "explicit"},
+        {"id": "R-04", "statement": "실제 활동 인플루언서인지 검증한다", "origin": "explicit"},
+        {"id": "R-05", "statement": "계약 관리·정산을 하는 어드민이 있다", "origin": "explicit"},
+        {"id": "R-06", "statement": "광고주·인플루언서가 권한별로 회원가입한다", "origin": "explicit"},
+    ],
+    "proposed_requirements": [
+        {"id": "P-01", "statement": "다통화 정산 환율 기준·기록", "category": "data-integrity",
+         "rationale": "환율 기준 없으면 정산 분쟁", "basis": "R-03", "origin": "proposed"},
+    ],
+    "open_questions": [], "target_platform": "both",
+    "provenance": {"goal_interpretation": "inference", "requirement_normalization": "per_item",
+                   "proposed_requirements": "inference", "target_platform": "fact"},
+}
+
+if os.environ.get("UX_MODE") == "real":
+    print("\n=== [real] discovery 기반 사용자 관점 구조화(인플루언서) ===")
+    rb = ux_agent.produce({"intake": INFLUENCER_INTAKE, "strategy": {}, "discovery": INFLUENCER_DISCOVERY},
+                          llm=ux_agent.real_llm)
+    tasks = rb["primary_tasks"]
+    print(f"primary_tasks {len(tasks)}건:")
+    for t in tasks:
+        print(f"  task: {t['task']}  | source: {t.get('source_requirement')}  | origin: {t.get('origin')}")
+    raw = set(INFLUENCER_INTAKE["requirements"])
+    one2one = [t for t in tasks if t["task"] in raw]
+    print(f"요구 원문 1:1 복사 태스크: {len(one2one)}/{len(tasks)} (낮을수록 사용자 관점 구조화)")
+    print("source_requirement 모두 보유:", all(t.get("source_requirement") for t in tasks))
+    # 흐름이 고정 템플릿(진입/수행/확인/완료)인지 — 단계가 태스크마다 다른지
+    flow_steps = [tuple(f.get("steps", [])) for f in rb["user_flows"]]
+    print(f"user_flows: {len(rb['user_flows'])}개 | 서로 다른 단계 패턴 수: {len(set(flow_steps))} (1=고정템플릿 의심)")
+    for f in rb["user_flows"][:6]:
+        print(f"  [{f.get('task')}] {f.get('steps')}")
+    assert all(t.get("source_requirement") for t in tasks), "source_requirement 누락"
+    print("[real] 검증 통과(validate 포함)")

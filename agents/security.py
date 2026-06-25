@@ -10,12 +10,34 @@ orchestrator 계약: producer(inputs: dict) -> body: dict
 """
 
 import json
+import os
 from pathlib import Path
+
+try:
+    from dotenv import load_dotenv
+    load_dotenv(Path(__file__).resolve().parent.parent / ".env")
+except ImportError:
+    pass
 
 AGENT_NAME = "agent.security"
 SYSTEM_PROMPT = Path(__file__).with_name("agent_security.md").read_text(encoding="utf-8")
 
 CORE_ORIGINS = ("fact", "human")  # 핵심 보안 의무에 허용되는 출처
+REAL_MODEL_DEFAULT = "claude-sonnet-4-6"
+
+# real 모드 지시: 기능별 보안 사고(고정 체크리스트 금지). 검색 없음(추론).
+REAL_MODE_INSTRUCTION = (
+    "\n\n## real 모드 지시(기능별 보안 사고)\n"
+    "1. 입력의 discovery.requirement_normalization(정리된 R-)과 proposed_requirements를 본다. 각 요구된 기능을 보고, "
+    "그 기능이 상용으로 안전하려면 필요한 보안 통제를 그 기능의 성격에서 도출한다(intake.requirements 키워드 매칭이 아니라).\n"
+    "2. 기능마다 다른 통제: 어드민이면 어드민에 필요한 통제(역할 분리·관리 기능 접근통제·감사 로그), 정산이면 정산에 필요한 통제(거래 무결성·금액/상태 변경 추적·정산 검증), "
+    "인증/회원이면 계정·세션 통제. 모든 요구에 같은 보안 세트를 붙이는 고정 체크리스트 금지 — 기능마다 통제가 다르다(discovery.proposed_requirements의 기능별 사고와 일관).\n"
+    "3. No-Fabrication: 각 security_requirement는 source_requirement(어느 R-/요구에서 도출했는지) 필수. 근거 없는 통제 생성 금지. origin은 \"fact\" 또는 \"human\". "
+    "data_classification 항목도 source_requirement 필수.\n"
+    "4. 내부 일관성: threat_model의 mitigated_by는 security_requirements의 control 이름만 참조(새 통제 발명 금지). threat_model은 inference.\n"
+    "5. provenance: security_requirements=\"fact\"(또는 human), data_classification=\"fact\", threat_model=\"inference\". body에 \"open_questions\": [] 포함. "
+    "출력은 출력 스키마의 JSON 객체 하나만(설명 텍스트·코드펜스 금지)."
+)
 
 # 요구 텍스트에 포함되면 해당 보안 통제를 트리거하는 키워드 룰(결정적, 발명 아님).
 # (키워드, 통제, 카테고리, 민감데이터 분류[있으면])
@@ -30,8 +52,10 @@ KEYWORD_RULES = [
 ]
 
 
-def build_user_prompt(intake: dict) -> str:
-    return json.dumps({"intake": intake}, ensure_ascii=False)
+def build_user_prompt(intake: dict, discovery: dict = None) -> str:
+    disc = {k: (discovery or {}).get(k) for k in
+            ("goal_interpretation", "requirement_normalization", "proposed_requirements")}
+    return json.dumps({"intake": intake, "discovery": disc}, ensure_ascii=False)
 
 
 def validate(body: dict) -> dict:
@@ -129,17 +153,57 @@ def offline_llm(system: str, user: str) -> str:
     return json.dumps(body, ensure_ascii=False)
 
 
+def _extract_json(text: str) -> str:
+    text = text.replace("```json", "").replace("```", "").strip()
+    i, j = text.find("{"), text.rfind("}")
+    return text[i:j + 1] if i != -1 and j != -1 and j > i else text
+
+
+def make_real_llm(model=REAL_MODEL_DEFAULT, max_tokens=8192):
+    """real llm(system, user) -> str. Anthropic messages API(검색 없음, 추론).
+    실패(SDK 미설치/키 없음/네트워크/API 에러)는 RuntimeError — produce에서 offline 폴백."""
+    def real_llm(system: str, user: str) -> str:
+        try:
+            import anthropic
+        except ImportError as e:
+            raise RuntimeError("real 모드 불가: anthropic SDK 미설치") from e
+        api_key = os.environ.get("ANTHROPIC_API_KEY")
+        if not api_key:
+            raise RuntimeError("real 모드 불가: ANTHROPIC_API_KEY 없음")
+        client = anthropic.Anthropic(api_key=api_key)
+        try:
+            resp = client.messages.create(
+                model=model, max_tokens=max_tokens,
+                system=system + REAL_MODE_INSTRUCTION,
+                messages=[{"role": "user", "content": user}],
+            )
+        except Exception as e:
+            raise RuntimeError(f"real 모드 Anthropic API 호출 실패: {type(e).__name__}: {e}") from e
+        text = "".join(b.text for b in resp.content if getattr(b, "type", None) == "text").strip()
+        if not text:
+            raise RuntimeError("real 모드: Anthropic 응답에 텍스트 없음")
+        return _extract_json(text)
+    return real_llm
+
+
+real_llm = make_real_llm()
+
+
 def produce(inputs: dict, llm=offline_llm) -> dict:
     intake = inputs["intake"]
-    discovery = inputs.get("discovery", {})  # v12: discovery 입력 연결(받기만, 활용은 real 단계 프롬프트에서)
-    raw = llm(SYSTEM_PROMPT, build_user_prompt(intake))
+    discovery = inputs.get("discovery", {})  # v12: discovery 입력(real 프롬프트가 기능별 보안 사고에 사용)
+    up = build_user_prompt(intake, discovery)
+    try:
+        raw = llm(SYSTEM_PROMPT, up)
+    except RuntimeError:
+        raw = offline_llm(SYSTEM_PROMPT, up)  # real 실패 -> offline 폴백
     raw = raw.replace("```json", "").replace("```", "").strip()
     body = json.loads(raw)
     return validate(body)
 
 
 def make_producer(llm=offline_llm):
-    """orchestrator에 등록할 producer(inputs)->body 클로저. llm 주입은 클로저로 처리(구조 변경 없음)."""
+    """orchestrator에 등록할 producer(inputs)->body 클로저. mock: make_producer(). real: make_producer(real_llm)."""
     def producer(inputs):
         return produce(inputs, llm=llm)
     return producer

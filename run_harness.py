@@ -51,14 +51,16 @@ TENANT_TABLES = ("record_validations", "artifacts", "record_versions", "runs", "
 def build_producers(art_dir: Path):
     """real/mock 스위치는 기존 환경변수 패턴을 따른다(각 에이전트 무수정)."""
     strat_llm = strategy_agent.real_llm if os.environ.get("STRATEGY_MODE") == "real" else strategy_agent.offline_llm
+    ux_llm = ux_agent.real_llm if os.environ.get("UX_MODE") == "real" else ux_agent.offline_llm
+    sec_llm = security_agent.real_llm if os.environ.get("SECURITY_MODE") == "real" else security_agent.offline_llm
     if os.environ.get("FEATURES_MODE") == "real":
         feat_llm = features_agent.make_real_llm(use_search=(os.environ.get("FEATURES_SEARCH") == "on"))
     else:
         feat_llm = features_agent.offline_llm
     return {
         "strategy": strategy_agent.make_producer(strat_llm),
-        "ux": ux_agent.make_producer(),
-        "security": security_agent.make_producer(),
+        "ux": ux_agent.make_producer(ux_llm),
+        "security": security_agent.make_producer(sec_llm),
         "design_system": ds_agent.make_producer(),
         "features": features_agent.make_producer(feat_llm),
         "wireframe": wireframe_agent.make_producer(),
