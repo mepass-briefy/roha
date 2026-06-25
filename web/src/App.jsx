@@ -76,8 +76,17 @@ function DiscoveryView({ body, pk, onSaved }) {
 
   const clone = () => JSON.parse(JSON.stringify(draft));
   const setMetric = (i, f, v) => { const d = clone(); d.goal_interpretation.candidate_metrics[i][f] = v; setDraft(d); };
-  const delMetric = (i) => { const d = clone(); d.goal_interpretation.candidate_metrics.splice(i, 1); setDraft(d); };
+  // 삭제는 단순 제거가 아니라 '틀림 신호' — body에 남겨 rejected+이유로 표기(재실행 시 AI 입력).
+  const rejectMetric = (i) => { const d = clone(); const m = d.goal_interpretation.candidate_metrics[i]; m.rejected = true; if (m.reject_reason == null) m.reject_reason = ""; setDraft(d); };
+  const restoreMetric = (i) => { const d = clone(); const m = d.goal_interpretation.candidate_metrics[i]; delete m.rejected; delete m.reject_reason; setDraft(d); };
   const setAnswer = (i, v) => { const d = clone(); d.open_questions[i] = { question: qText(d.open_questions[i]), answer: v }; setDraft(d); };
+
+  // 편집 시작: 지표에 안정적 id(M-01..) 부여(편집·제외가 id로 참조되게).
+  const startEdit = () => {
+    const d = JSON.parse(JSON.stringify(body));
+    ((d.goal_interpretation || {}).candidate_metrics || []).forEach((m, i) => { if (!m.id) m.id = `M-${String(i + 1).padStart(2, "0")}`; });
+    setDraft(d); setEdit(true); setErr(null);
+  };
 
   const save = async () => {
     setSaving(true); setErr(null);
@@ -90,21 +99,32 @@ function DiscoveryView({ body, pk, onSaved }) {
   return (<>
     <div className="row" style={{ justifyContent: "flex-end", marginBottom: 8 }}>
       {!edit
-        ? <button className="btn-tonal" onClick={() => setEdit(true)}>지표·답변 수정</button>
+        ? <button className="btn-tonal" onClick={startEdit}>지표·답변 수정</button>
         : <><button className="btn-text" onClick={cancel} disabled={saving}>취소</button>
             <button className="btn-primary" onClick={save} disabled={saving}>{saving ? "저장 중…" : "저장"}</button></>}
     </div>
     {err && <div className="err" style={{ marginBottom: 8 }}>{err}</div>}
-    <div className="notice">AI가 고객 말을 해석한 결과입니다(전부 추론·미확정). 지표는 수정/삭제, 확인 필요 항목은 답변을 넣어 다듬을 수 있습니다.</div>
+    <div className="notice">AI가 고객 말을 해석한 결과입니다(전부 추론·미확정). 지표는 수정/제외(이유 기록), 확인 필요 항목은 답변을 넣어 다듬을 수 있습니다. 제외·답변은 재실행 시 반영됩니다.</div>
 
     <h3>목표 해석 — 차원</h3>
     {(gi.inferred_dimensions || []).map((d, i) => <div className="item" key={i}>{d.dimension}<div className="meta">근거: {d.basis}</div></div>)}
 
     <h3>후보 지표</h3>
     {metrics.length === 0 && <div className="muted" style={{ fontSize: 13 }}>지표 없음</div>}
-    {metrics.map((m, i) => edit
-      ? <div className="item" key={i}>
-          <label style={{ marginTop: 0 }}>지표</label>
+    {/* 편집 모드: 모든 지표(제외 포함) 노출 — 수정/제외/되돌리기 */}
+    {edit && metrics.map((m, i) => m.rejected
+      ? <div className="item" key={i} style={{ opacity: 0.7 }}>
+          {m.id && <b style={{ fontSize: 12 }}>{m.id} </b>}
+          <span style={{ textDecoration: "line-through" }}>{m.metric}</span> <span className="badge b-inference">제외됨</span>
+          <label style={{ marginTop: 8 }}>제외 이유(재실행 시 AI 입력)</label>
+          <input type="text" value={m.reject_reason || ""} onChange={(e) => setMetric(i, "reject_reason", e.target.value)} placeholder="왜 틀렸는지 — 같은 지표를 다시 내지 않도록" />
+          <div className="row" style={{ marginTop: 8, justifyContent: "flex-end" }}>
+            <button className="btn-text" onClick={() => restoreMetric(i)}>되돌리기</button>
+          </div>
+        </div>
+      : <div className="item" key={i}>
+          {m.id && <b style={{ fontSize: 12 }}>{m.id}</b>}
+          <label style={{ marginTop: m.id ? 4 : 0 }}>지표</label>
           <input type="text" value={m.metric || ""} onChange={(e) => setMetric(i, "metric", e.target.value)} />
           <label>근거(rationale)</label>
           <input type="text" value={m.rationale || ""} onChange={(e) => setMetric(i, "rationale", e.target.value)} />
@@ -112,11 +132,16 @@ function DiscoveryView({ body, pk, onSaved }) {
             <select style={{ width: "auto" }} value={m.confidence || "low"} onChange={(e) => setMetric(i, "confidence", e.target.value)}>
               <option value="low">conf: low</option><option value="medium">conf: medium</option><option value="high">conf: high</option>
             </select>
-            <button className="rowbtn del" onClick={() => delMetric(i)}>삭제</button>
+            <button className="rowbtn del" onClick={() => rejectMetric(i)}>제외</button>
           </div>
         </div>
-      : <div className="item" key={i}>{m.metric} <span className="badge b-inference">conf: {m.confidence}</span><div className="meta">{m.rationale}</div></div>
     )}
+    {/* 조회 모드: 활성 지표만 */}
+    {!edit && metrics.filter((m) => !m.rejected).map((m, i) => <div className="item" key={i}>{m.metric} <span className="badge b-inference">conf: {m.confidence}</span><div className="meta">{m.rationale}</div></div>)}
+    {!edit && metrics.some((m) => m.rejected) && <>
+      <h3>제외된 지표 — 재실행 시 반영</h3>
+      {metrics.filter((m) => m.rejected).map((m, i) => <div className="item" key={i} style={{ opacity: 0.7 }}>{m.id && <b style={{ fontSize: 12 }}>{m.id} </b>}<span style={{ textDecoration: "line-through" }}>{m.metric}</span> <span className="badge b-inference">제외됨</span><div className="meta">이유: {m.reject_reason || "(미기재)"}</div></div>)}
+    </>}
 
     <h3>요구 정규화 — 고객이 말한 것</h3>
     {(src.requirement_normalization || []).map((r) => <div className="item" key={r.id}><b>{r.id}</b> {r.statement}<span className={`badge ${r.origin === "context-inferred" ? "b-context" : "b-explicit"}`}>{r.origin === "context-inferred" ? "맥락 추론" : "고객 명시"}</span></div>)}
