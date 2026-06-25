@@ -70,7 +70,7 @@ def build_producers(art_dir: Path):
         feat_llm = features_agent.make_real_llm(use_search=(os.environ.get("FEATURES_SEARCH") == "on"))
     else:
         feat_llm = features_agent.offline_llm
-    # backend: BACKEND_RUNTIME=on이면 Agentic Runtime(generate-gate-repair-retry-converge), 끄면 기존 단발 그대로.
+    # *_RUNTIME=on이면 Agentic Runtime(generate-gate-repair-retry-converge), 끄면 기존 단발 그대로(회귀 0).
     if os.environ.get("BACKEND_RUNTIME") == "on":
         import backend_runtime
         backend_producer = backend_runtime.make_runtime_producer(
@@ -78,6 +78,20 @@ def build_producers(art_dir: Path):
             history_sink=backend_runtime.jsonl_history_sink(art_dir / "backend_iterations.jsonl"))
     else:
         backend_producer = backend_agent.make_producer(be_llm, artifact_dir=art_dir)
+    if os.environ.get("FRONTEND_RUNTIME") == "on":
+        import frontend_runtime
+        frontend_producer = frontend_runtime.make_runtime_producer(
+            fe_llm, art_dir,
+            history_sink=frontend_runtime.jsonl_history_sink(art_dir / "frontend_iterations.jsonl"))
+    else:
+        frontend_producer = frontend_agent.make_producer(fe_llm, artifact_dir=art_dir)
+    if os.environ.get("MOBILE_RUNTIME") == "on":
+        import mobile_runtime
+        mobile_producer = mobile_runtime.make_runtime_producer(
+            mb_llm, art_dir,
+            history_sink=mobile_runtime.jsonl_history_sink(art_dir / "mobile_iterations.jsonl"))
+    else:
+        mobile_producer = mobile_agent.make_producer(mb_llm, artifact_dir=art_dir)
     return {
         "discovery": discovery_agent.make_producer(disc_llm),
         "strategy": strategy_agent.make_producer(strat_llm),
@@ -87,8 +101,8 @@ def build_producers(art_dir: Path):
         "features": features_agent.make_producer(feat_llm),
         "wireframe": wireframe_agent.make_producer(wf_llm),
         "backend": backend_producer,
-        "frontend": frontend_agent.make_producer(fe_llm, artifact_dir=art_dir),
-        "mobile": mobile_agent.make_producer(mb_llm, artifact_dir=art_dir),
+        "frontend": frontend_producer,
+        "mobile": mobile_producer,
     }
 
 

@@ -158,7 +158,85 @@ if os.environ.get("RUNTIME_REAL") == "on":
     lines = hist_path.read_text(encoding="utf-8").strip().splitlines()
     assert len(lines) == len(res["iterations"]), "history 전량 저장 실패"
     print(" ", PASS, "(실측: 수렴·발명0·history 전량 저장)")
+
+    # ----- frontend·mobile 실측 (계약 형상 일관 입력, 동형 Runtime) -----
+    import frontend as frontend_agent
+    import frontend_runtime
+    import mobile as mobile_agent
+    import mobile_runtime
+
+    def _report(label, res, hist_path):
+        print(f"\n  [{label}] converged={res['converged']} reason={res['reason']} calls={res['calls']} iters={len(res['iterations'])}")
+        for it in res["iterations"]:
+            gr = it["gate_result"]
+            scr = len((it["body"] or {}).get("screens", []))
+            print(f"    v{it['iter']}: ERROR={len(gr['errors'])} WARN={len(gr['warnings'])} screens={scr} stop={it['stop']} reason={it['reason']}")
+            if gr["errors"]:
+                print("        ERROR:", gr["errors"][:2])
+            if it["diff"]:
+                print("        diff:", it["diff"])
+        fin = res["iterations"][-1]["gate_result"]
+        invented = [e for e in fin["errors"] if "[발명]" in e]
+        lines = hist_path.read_text(encoding="utf-8").strip().splitlines() if hist_path.exists() else []
+        assert res["converged"], f"{label} 수렴 실패"
+        assert not invented, f"{label} 발명 발생"
+        assert len(lines) == len(res["iterations"]), f"{label} history 전량 저장 실패"
+        print(f"    {PASS} ({label}: 수렴·발명0·history {len(lines)}건)")
+
+    def _ep2(eid, method, path, feat, succ, err):
+        return {"endpoint_id": eid, "method": method, "path": path, "feature_ref": feat, "security_ref": "ctrl",
+                "success_cases": [{"code": succ, "http_status": 200, "description": "d"}],
+                "error_cases": [{"code": err, "http_status": 400, "description": "d"}]}
+
+    print("\n=== [6] 실측: frontend Agentic Runtime (real) ===")
+    FE_WF = {"screens": [
+        {"screen": "신청 목록", "sections": [{"section": "목록", "components": ["table", "card"], "feature_refs": ["개인 신청"]}]},
+        {"screen": "정산 내역", "sections": [{"section": "내역", "components": ["table"], "feature_refs": ["정산 확인"]}]}],
+        "design_component_palette": ["table", "card", "button", "input"], "navigation": {"pattern": "left-sidebar"}, "open_questions": []}
+    FE_DS = {"component_specs": [
+        {"component": "table", "uses_tokens": ["color-primary", "r-md"]},
+        {"component": "card", "uses_tokens": ["color-surface", "sp-2"]},
+        {"component": "button", "uses_tokens": ["color-primary"]},
+        {"component": "input", "uses_tokens": ["color-outline", "r-sm"]}],
+        "color_tokens": [{"token": "color-primary"}, {"token": "color-surface"}, {"token": "color-outline"}],
+        "spacing": [{"token": "sp-2"}], "radius": [{"token": "r-md"}, {"token": "r-sm"}], "open_questions": []}
+    FE_BK = {"api_spec": {"endpoints": [
+        _ep2("ep-applications-list", "GET", "/api/v1/applications", "개인 신청", "OK", "VALIDATION_ERROR"),
+        _ep2("ep-settlements-list", "GET", "/api/v1/settlements", "정산 확인", "OK", "FORBIDDEN")]}, "open_questions": []}
+    fe_inputs = {"wireframe": FE_WF, "design_system": FE_DS, "backend": FE_BK, "ux": {}, "discovery": {}}
+    fe_hist = ART / "frontend_iterations.jsonl"
+    if fe_hist.exists():
+        fe_hist.unlink()
+    fe_gen = frontend_runtime.make_frontend_generate(frontend_agent.real_llm, ART)
+    fe_res = rt.run_loop("frontend", fe_inputs, fe_gen, gate, rt.default_repair,
+                         max_iter=2, history_sink=frontend_runtime.jsonl_history_sink(fe_hist))
+    _report("frontend", fe_res, fe_hist)
+
+    print("\n=== [6] 실측: mobile Agentic Runtime (real) ===")
+    MB_WF = {"screens": [
+        {"screen": "매치 피드", "sections": [{"section": "피드", "components": ["card", "button"], "feature_refs": ["매치 예약"]}]},
+        {"screen": "인플루언서 프로필", "sections": [{"section": "프로필", "components": ["card", "table"], "feature_refs": ["개인 신청"]}]}],
+        "design_component_palette": ["card", "table", "button", "input", "nav"], "navigation": {"pattern": "bottom-tab"}, "open_questions": []}
+    MB_DS = {"component_specs": [
+        {"component": "card", "uses_tokens": ["color-surface", "sp-2"]},
+        {"component": "table", "uses_tokens": ["color-primary", "r-md"]},
+        {"component": "button", "uses_tokens": ["color-primary"]},
+        {"component": "nav", "uses_tokens": ["color-surface"]}],
+        "color_tokens": [{"token": "color-primary"}, {"token": "color-surface"}, {"token": "color-surface-dark", "mode": "dark"}],
+        "spacing": [{"token": "sp-2"}], "radius": [{"token": "r-md"}],
+        "accessibility": {"min_touch_target": "44x44px"}, "open_questions": []}
+    MB_BK = {"api_spec": {"endpoints": [
+        _ep2("ep-matches-list", "GET", "/api/v1/matches", "매치 예약", "OK", "VALIDATION_ERROR"),
+        _ep2("ep-applications-get", "GET", "/api/v1/applications/{public_key}", "개인 신청", "OK", "NOT_FOUND")]}, "open_questions": []}
+    mb_inputs = {"wireframe": MB_WF, "design_system": MB_DS, "backend": MB_BK, "ux": {}, "discovery": {}}
+    mb_hist = ART / "mobile_iterations.jsonl"
+    if mb_hist.exists():
+        mb_hist.unlink()
+    mb_gen = mobile_runtime.make_mobile_generate(mobile_agent.real_llm, ART)
+    mb_res = rt.run_loop("mobile", mb_inputs, mb_gen, gate, rt.default_repair,
+                         max_iter=2, history_sink=mobile_runtime.jsonl_history_sink(mb_hist))
+    _report("mobile", mb_res, mb_hist)
 else:
-    print("\n[6] 실측 스킵(RUNTIME_REAL=on 아님). [7] 가드만 실행.")
+    print("\n[6] 실측 스킵(RUNTIME_REAL=on 아님). [5/7] 가드만 실행.")
 
 print("\nDONE")

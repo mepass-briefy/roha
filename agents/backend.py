@@ -486,6 +486,27 @@ def produce(inputs: dict, llm=offline_llm, artifact_dir: Path = DEFAULT_ARTIFACT
     # response_contract는 시스템 고정값으로 강제(LLM 출력 신뢰 안 함, 계약 임의변경 차단).
     spec.setdefault("api_spec", {})["response_contract"] = RESPONSE_CONTRACT
 
+    # real 산출 방어적 정규화(단발·루프 공통, frontend·mobile 동형). 형상 보정만 — 없는 근거 채우기·발명 금지.
+    # offline 산출은 이미 정규형이라 무영향(값·의미 불변).
+    for ep in (spec.get("api_spec", {}).get("endpoints", []) or []):
+        if not isinstance(ep, dict):
+            continue
+        # security_ref: 리스트로 오면 첫 통제(주 통제)만 — 의미 보존, 멤버십 그대로.
+        sr = ep.get("security_ref")
+        if isinstance(sr, list):
+            ep["security_ref"] = next((str(s) for s in sr if s and str(s).strip()), "")
+        # path param: {public_key} 외 식별자 노출({xxx_public_key}/{id} 등)은 {public_key}로 보정(규칙: path param은 {public_key}만).
+        p = ep.get("path")
+        if isinstance(p, str) and "{" in p:
+            segs = p.split("/")
+            for i, seg in enumerate(segs):
+                if seg.startswith("{") and seg.endswith("}") and seg[1:-1] != "public_key":
+                    segs[i] = "{public_key}"
+            ep["path"] = "/".join(segs)
+    # open_questions: 문자열 리스트로 정규화(real이 객체로 줄 수 있음).
+    spec["open_questions"] = [q if isinstance(q, str) else json.dumps(q, ensure_ascii=False)
+                             for q in (spec.get("open_questions") or [])]
+
     # B: Pydantic 검증(엔드포인트·엔티티 계약 강제). 위반 시 여기서 raise.
     api_spec = ApiSpec(**spec["api_spec"])
     entities = [Entity(**e) for e in spec.get("entities", [])]
