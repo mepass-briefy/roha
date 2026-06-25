@@ -14,10 +14,11 @@ Contract Compliance(각 에이전트 계약), Provenance(항목별 표기), Requ
   계약 위반 존재 -> FAIL
 반환: {"status": "PASS|WARN|FAIL", "reasons": [...], "warnings": [...]}
 
-두 레벨 분리(backend·wireframe): 계약 위반=ERROR=reasons(FAIL, 차단) vs 품질 미달=WARN=warnings(통과, EXIT 0).
+두 레벨 분리(backend·wireframe·features): 계약 위반=ERROR=reasons(FAIL, 차단) vs 품질 미달=WARN=warnings(통과, EXIT 0).
 에이전틱 루프가 없으므로 '지금 막으면 자동 복구 수단이 없는 것'만 ERROR로 한다.
-  ERROR(차단): 빈 산출(entities/endpoints/screens=[]), 발명(source 근거 위반·미존재 참조), 식별자 3종 결손, 외부 public_key 위반.
-  WARN(통과): 빈약(fields 부족·관계 미모델링), 커버리지 일부 결손, 권고(네이밍 등).
+  ERROR(차단): 빈 산출(entities/endpoints/screens/features=[]), 발명(source 근거 형식 위반·미존재 참조), 식별자 3종 결손(backend), 외부 public_key 위반(backend).
+  WARN(통과): 빈약(fields·수용기준 부족·관계 미모델링), 커버리지 일부 결손, 권고(네이밍 등).
+  features는 식별자 3종·외부 public_key 비해당. source 근거 prefix는 ux:/requirement:/derived:/http.
 재생성 루프·agent 재실행·orchestrator 수정 금지. FAIL(ERROR)이면 사유만 보고한다.
 """
 
@@ -153,6 +154,27 @@ def contract_levels(record_type, body):
         if screens and uncov:
             warns.append(f"[커버리지] 화면에 배치되지 않은 기능: {uncov}")
 
+    elif record_type == "features":
+        feats = body.get("features") or []
+        # 1) 빈 산출 = ERROR
+        if not feats:
+            errors.append("[빈 산출] features=[] — 요구가 있으면 기능은 반드시 존재")
+        # 발명(형식): source는 features 계약의 근거 prefix만(ux:/requirement:/derived:/http).
+        # discovery:/strategy: 같은 미정의 prefix는 features 계약에 없음. 멤버십 발명(입력 대조)은
+        # body에 discovery_index가 없어 producer 교차검증에서 차단(유지) — 게이트는 형식만.
+        VALID_SRC = ("ux:", "requirement:", "derived:", "http://", "https://")
+        for f in feats:
+            nm = f.get("feature", "?")
+            src = str(f.get("source", ""))
+            if not src:
+                errors.append(f"[발명] feature '{nm}' source 결손(근거 없음)")
+            elif not src.startswith(VALID_SRC):
+                errors.append(f"[발명] feature '{nm}' source가 근거 형식 아님('{src}') — ux:/requirement:/derived:/http 만 허용")
+            # 5) 품질: 완결성(수용 기준) 빈약
+            if not (f.get("acceptance_criteria") or []):
+                warns.append(f"[품질] feature '{nm}' 수용 기준(acceptance_criteria) 빈약")
+        # 6) 커버리지(품질): discovery 목표 대조는 body에 discovery_index가 없어 생략(형식 검사로 유지).
+
     return errors, warns
 
 
@@ -240,9 +262,10 @@ def run_review_gate(record_type, body):
     if not body.get("provenance"):
         reasons.append("Provenance 표기 없음(계약)")
 
-    # backend·wireframe: 계약 위반=ERROR(reasons, 차단) vs 품질 미달=WARN(warnings, 통과) 항목별 분리.
+    # backend·wireframe·features: 계약 위반=ERROR(reasons, 차단) vs 품질 미달=WARN(warnings, 통과) 항목별 분리.
     # (1 빈 산출 / 2 발명 / 3 식별자 3종 / 4 외부 public_key = ERROR. 5 빈약 / 6 커버리지 = WARN.)
-    if record_type in ("backend", "wireframe"):
+    # features에 식별자 3종·외부 public_key는 비해당(backend 전용).
+    if record_type in ("backend", "wireframe", "features"):
         errs, qwarns = contract_levels(record_type, body)
         reasons.extend(errs)
         warnings.extend(qwarns)

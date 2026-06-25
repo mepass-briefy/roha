@@ -14,6 +14,7 @@ sys.path.insert(0, str(BASE)); sys.path.insert(0, str(BASE / "agents"))
 
 import backend as backend_agent
 import wireframe as wireframe_agent
+import features as features_agent
 import gate_review
 
 TMP = BASE / "_run_gatelevels"
@@ -102,6 +103,38 @@ cov["entities"] = [en for en in cov["entities"] if "settlement" not in en["name"
 rcov = gate("backend", cov); show("(cov) 일부 커버리지 결손", rcov)
 print("  -> WARN:", [w for w in rcov["warnings"] if "[커버리지]" in w])
 assert rcov["status"] == "WARN" and not rcov["reasons"], "일부 커버리지 결손은 WARN(통과)"
+
+print("\n=== features 게이트 레벨(311f7e7 틀 동일) ===")
+FT_INTAKE = {"site_character": "x", "requirements": ["개인 신청"]}
+FT_UX = {"primary_tasks": [{"task": "개인 신청"}], "user_flows": [{"task": "개인 신청", "steps": ["진입", "수행"]}]}
+FT_STRATEGY = {"wow_points": ["정산 투명성"]}
+FT_SECURITY = {"security_requirements": []}
+good_ft = features_agent.produce({"intake": FT_INTAKE, "ux": FT_UX, "security": FT_SECURITY, "strategy": FT_STRATEGY},
+                                 llm=features_agent.offline_llm)
+
+print("\n--- [7/8] 회귀: offline 정상 features는 ERROR 0 ---")
+gft = gate("features", good_ft); show("features(offline)", gft)
+print("  WARN 예:", [w for w in gft["warnings"] if w.startswith("[")][:3])
+assert gft["status"] != "FAIL", "정상 features가 FAIL이면 안 됨"
+
+print("\n--- [5] 음성 2종(features) -> 각각 FAIL ---")
+# (a) 빈 features
+fa = copy.deepcopy(good_ft); fa["features"] = []
+rfa = gate("features", fa); show("(a) features=[]", rfa)
+assert rfa["status"] == "FAIL" and has_tag(rfa, "[빈 산출]")
+# (b) 발명 source(discovery:/strategy: 같은 미정의 prefix는 features 계약에 없음 -> 발명)
+fb = copy.deepcopy(good_ft); fb["features"][0]["source"] = "discovery:goal"
+rfb = gate("features", fb); show("(b) 발명 source", rfb)
+assert rfb["status"] == "FAIL" and has_tag(rfb, "[발명]")
+
+print("\n--- [6] WARN: 빈약(수용기준 없음)은 통과 ---")
+fc = copy.deepcopy(good_ft)
+for f in fc["features"]:
+    f["source"] = "ux:개인 신청" if f["category"] == "Explicit" else "derived:x"
+    f["acceptance_criteria"] = []  # 수용 기준 비움 -> 빈약 WARN
+rfc = gate("features", fc); show("(c) 수용기준 빈약", rfc)
+print("  -> WARN:", [w for w in rfc["warnings"] if "[품질]" in w][:3])
+assert rfc["status"] == "WARN" and not rfc["reasons"], "빈약 features는 WARN(통과)이어야 함"
 
 shutil.rmtree(TMP)
 print("\nDONE")

@@ -100,3 +100,15 @@ block("Business를 features에 넣음", [{"feature": "사업판단", "category":
 block("Competitive인데 source가 URL 아님",
       [{"feature": "경쟁참고", "category": "Competitive", "source": "ux:x", "origin": "fact"}],
       {"features": "per_item"})
+
+
+# 새 게이트 레벨 분리: 정상 features 산출은 ERROR 0(FAIL 아님). real/offline 공통.
+print("\n=== 게이트 레벨 분리(contract_levels) ===")
+import gate_review
+gr = gate_review.run_review_gate("features", b)
+print("status =", gr["status"], "| ERROR 수 =", len(gr["reasons"]))
+for e in gr["reasons"]:
+    print("  ERROR:", e)
+print("WARN(품질/커버리지) 예:", [w for w in gr["warnings"] if w.startswith("[")][:3])
+assert gr["status"] != "FAIL", f"정상 features 산출이 FAIL: {gr['reasons']}"
+print("게이트 ERROR 0 통과")
