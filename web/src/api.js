@@ -22,6 +22,7 @@ export const api = {
   run: (pk) => j("POST", `/projects/${enc(pk)}/run`),
   status: (pk) => j("GET", `/projects/${enc(pk)}/status`),
   records: (pk) => j("GET", `/projects/${enc(pk)}/records`),
+  editDiscovery: (pk, body) => j("PUT", `/projects/${enc(pk)}/records/discovery`, { body }),
   approve: (pk) => j("POST", `/projects/${enc(pk)}/approve`),
   complete: (pk) => j("POST", `/projects/${enc(pk)}/complete`),
   reopen: (pk) => j("POST", `/projects/${enc(pk)}/reopen`),

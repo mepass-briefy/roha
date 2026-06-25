@@ -253,3 +253,54 @@ def records(public_key: str):
     # 내부 PK 비노출: type/status/version/body만
     return {"public_key": public_key,
             "records": [{"type": t, "status": s, "version": v, "body": b} for t, s, v, b in rows]}
+
+
+class EditBodyReq(BaseModel):
+    body: dict
+
+
+@app.put("/projects/{public_key}/records/discovery")
+def edit_discovery(public_key: str, req: EditBodyReq):
+    """사람이 수정/삭제/답변한 Discovery body를 새 append-only 버전으로 저장한다.
+    orchestrator·에이전트 무수정 — create_project와 동일하게 PgStore로 버전만 기록한다.
+    의미 변경(canonical_hash 변화) 시에만 version+1. status는 보존(검토 단계 편집 가정).
+    하드삭제 = 새 버전 body에서 항목 제거(이전 버전 이력은 append-only로 보존)."""
+    store = _store(_project_pk(public_key))
+    head = store.head("discovery")
+    if not head:
+        raise HTTPException(status_code=404, detail="discovery record 없음(아직 실행 전)")
+    new_body = req.body
+    if not isinstance(new_body, dict):
+        raise HTTPException(status_code=400, detail="body는 객체여야 함")
+    # 편집이 닿는 부분만 구조 검증(깨진 수정 차단). 전체 스키마 validate는 구버전 레코드를
+    # 거부할 수 있어 쓰지 않는다. 지표는 비어 있으면 안 되고, open_questions는 리스트여야 한다.
+    gi = new_body.get("goal_interpretation")
+    if not isinstance(gi, dict) or not isinstance(gi.get("candidate_metrics", []), list):
+        raise HTTPException(status_code=400, detail="goal_interpretation.candidate_metrics 구조 오류")
+    for m in gi.get("candidate_metrics", []):
+        if not isinstance(m, dict) or not str(m.get("metric") or "").strip():
+            raise HTTPException(status_code=400, detail="지표(metric)는 빈 값일 수 없습니다")
+    if not isinstance(new_body.get("open_questions", []), list):
+        raise HTTPException(status_code=400, detail="open_questions는 리스트여야 함")
+
+    # 변경 판정은 내용 기준(클라이언트가 보낸 body vs 현재 body). human_edited 표기는
+    # 저장 시점에만 붙여 '내용 무변경 no-op'이 새 버전을 만들지 않게 한다(동결 규칙 3.6.2).
+    cur_ver = store.version("discovery", head["current_version"])
+    if canonical_hash(new_body) == canonical_hash(cur_ver["body"]):
+        return {"changed": False, "version": head["current_version"], "status": head["status"]}
+
+    prov = dict(new_body.get("provenance") or {})
+    prov["human_edited"] = True
+    new_body["provenance"] = prov
+    new_hash = canonical_hash(new_body)
+    new_version = head["current_version"] + 1
+    ver_pk = store.next_pk()
+    store.append_version({"pk": ver_pk, "type": "discovery", "record_pk": head["pk"],
+                          "version": new_version, "body": new_body, "body_hash": new_hash,
+                          "derived_from": cur_ver.get("derived_from") or [], "produced_by_run": None})
+    store.save_head({"pk": head["pk"], "type": "discovery", "current_version": new_version,
+                     "current_version_pk": ver_pk, "status": head["status"]})
+    store.emit("human_edit", "record", head["pk"],
+               {"node": "discovery", "from_version": head["current_version"], "to_version": new_version},
+               actor="human", record_pk=head["pk"], record_version=new_version)
+    return {"changed": True, "version": new_version, "status": head["status"]}

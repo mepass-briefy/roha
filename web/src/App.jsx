@@ -59,20 +59,84 @@ function StructuredView({ body }) {
         : <div className="item"><Val v={v} /></div>}
     </div>))}<ProvBadges p={body.provenance} /></>;
 }
-function DiscoveryView({ body }) {
-  const gi = body.goal_interpretation || {};
+const qText = (it) => (typeof it === "string" ? it : (it.question || ""));
+const qAns = (it) => (typeof it === "string" ? "" : (it.answer || ""));
+
+function DiscoveryView({ body, pk, onSaved }) {
+  const [edit, setEdit] = useState(false);
+  const [draft, setDraft] = useState(body);
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState(null);
+  useEffect(() => { setDraft(body); setEdit(false); setErr(null); }, [body]);
+
+  const src = edit ? draft : body;
+  const gi = src.goal_interpretation || {};
+  const metrics = gi.candidate_metrics || [];
+  const oqs = src.open_questions || [];
+
+  const clone = () => JSON.parse(JSON.stringify(draft));
+  const setMetric = (i, f, v) => { const d = clone(); d.goal_interpretation.candidate_metrics[i][f] = v; setDraft(d); };
+  const delMetric = (i) => { const d = clone(); d.goal_interpretation.candidate_metrics.splice(i, 1); setDraft(d); };
+  const setAnswer = (i, v) => { const d = clone(); d.open_questions[i] = { question: qText(d.open_questions[i]), answer: v }; setDraft(d); };
+
+  const save = async () => {
+    setSaving(true); setErr(null);
+    try { await api.editDiscovery(pk, draft); await onSaved(); setEdit(false); }
+    catch (e) { setErr(String(e.message || e)); }
+    finally { setSaving(false); }
+  };
+  const cancel = () => { setDraft(body); setEdit(false); setErr(null); };
+
   return (<>
-    <div className="notice">AI가 고객 말을 해석한 결과입니다(전부 추론·미확정).</div>
-    <h3>목표 해석 — 차원</h3>{(gi.inferred_dimensions || []).map((d, i) => <div className="item" key={i}>{d.dimension}<div className="meta">근거: {d.basis}</div></div>)}
-    <h3>후보 지표</h3>{(gi.candidate_metrics || []).map((m, i) => <div className="item" key={i}>{m.metric} <span className="badge b-inference">conf: {m.confidence}</span><div className="meta">{m.rationale}</div></div>)}
-    <h3>요구 정규화 — 고객이 말한 것</h3>{(body.requirement_normalization || []).map((r) => <div className="item" key={r.id}><b>{r.id}</b> {r.statement}<span className={`badge ${r.origin === "context-inferred" ? "b-context" : "b-explicit"}`}>{r.origin === "context-inferred" ? "맥락 추론" : "고객 명시"}</span></div>)}
-    {(body.proposed_requirements || []).length > 0 && <>
+    <div className="row" style={{ justifyContent: "flex-end", marginBottom: 8 }}>
+      {!edit
+        ? <button className="btn-tonal" onClick={() => setEdit(true)}>지표·답변 수정</button>
+        : <><button className="btn-text" onClick={cancel} disabled={saving}>취소</button>
+            <button className="btn-primary" onClick={save} disabled={saving}>{saving ? "저장 중…" : "저장"}</button></>}
+    </div>
+    {err && <div className="err" style={{ marginBottom: 8 }}>{err}</div>}
+    <div className="notice">AI가 고객 말을 해석한 결과입니다(전부 추론·미확정). 지표는 수정/삭제, 확인 필요 항목은 답변을 넣어 다듬을 수 있습니다.</div>
+
+    <h3>목표 해석 — 차원</h3>
+    {(gi.inferred_dimensions || []).map((d, i) => <div className="item" key={i}>{d.dimension}<div className="meta">근거: {d.basis}</div></div>)}
+
+    <h3>후보 지표</h3>
+    {metrics.length === 0 && <div className="muted" style={{ fontSize: 13 }}>지표 없음</div>}
+    {metrics.map((m, i) => edit
+      ? <div className="item" key={i}>
+          <label style={{ marginTop: 0 }}>지표</label>
+          <input type="text" value={m.metric || ""} onChange={(e) => setMetric(i, "metric", e.target.value)} />
+          <label>근거(rationale)</label>
+          <input type="text" value={m.rationale || ""} onChange={(e) => setMetric(i, "rationale", e.target.value)} />
+          <div className="row" style={{ marginTop: 8, justifyContent: "space-between" }}>
+            <select style={{ width: "auto" }} value={m.confidence || "low"} onChange={(e) => setMetric(i, "confidence", e.target.value)}>
+              <option value="low">conf: low</option><option value="medium">conf: medium</option><option value="high">conf: high</option>
+            </select>
+            <button className="rowbtn del" onClick={() => delMetric(i)}>삭제</button>
+          </div>
+        </div>
+      : <div className="item" key={i}>{m.metric} <span className="badge b-inference">conf: {m.confidence}</span><div className="meta">{m.rationale}</div></div>
+    )}
+
+    <h3>요구 정규화 — 고객이 말한 것</h3>
+    {(src.requirement_normalization || []).map((r) => <div className="item" key={r.id}><b>{r.id}</b> {r.statement}<span className={`badge ${r.origin === "context-inferred" ? "b-context" : "b-explicit"}`}>{r.origin === "context-inferred" ? "맥락 추론" : "고객 명시"}</span></div>)}
+
+    {(src.proposed_requirements || []).length > 0 && <>
       <h3>제안 요구 — 상용 준비 (검토 필요)</h3>
       <div className="notice" style={{ marginBottom: 8 }}>고객이 말하지 않았지만 상용에 필요한 항목입니다. 채택 여부는 사람이 정합니다.</div>
-      {body.proposed_requirements.map((p) => <div className="item" key={p.id}><b>{p.id}</b> {p.statement}<span className="badge b-proposed">제안</span>{p.category && <span className="badge b-inference">{p.category}</span>}<div className="meta">근거: {p.basis}</div><div className="meta">이유: {p.rationale}</div></div>)}
+      {src.proposed_requirements.map((p) => <div className="item" key={p.id}><b>{p.id}</b> {p.statement}<span className="badge b-proposed">제안</span>{p.category && <span className="badge b-inference">{p.category}</span>}<div className="meta">근거: {p.basis}</div><div className="meta">이유: {p.rationale}</div></div>)}
     </>}
-    <h3>확인 필요</h3><ul className="oq">{(body.open_questions || []).map((q, i) => <li key={i}>{q}</li>)}</ul>
-    <div className="meta">target_platform: <b>{body.target_platform}</b></div>
+
+    <h3>확인 필요 — 답변 입력</h3>
+    {oqs.length === 0 && <div className="muted" style={{ fontSize: 13 }}>확인 필요 항목 없음</div>}
+    {oqs.map((it, i) => <div className="item" key={i}>
+      <div>{qText(it)}</div>
+      {edit
+        ? <><label style={{ marginTop: 8 }}>답변</label><textarea value={qAns(it)} onChange={(e) => setAnswer(i, e.target.value)} placeholder="이 질문에 대한 답변을 적어 정교하게 다듬으세요" style={{ minHeight: 56 }} /></>
+        : <div className="meta" style={{ marginTop: 6 }}>{qAns(it) ? `답변: ${qAns(it)}` : "미답변"}</div>}
+    </div>)}
+
+    <div className="meta" style={{ marginTop: 12 }}>target_platform: <b>{src.target_platform}</b></div>
   </>);
 }
 function FeaturesView({ body }) {
@@ -80,8 +144,8 @@ function FeaturesView({ body }) {
   return (<>{(body.features || []).map((f, i) => <div className="item" key={i}>{f.feature}<span className={`badge ${cls[f.category] || "b-inference"}`}>{f.category}</span><div className="meta">출처: {f.source}</div></div>)}
     {(body.open_questions || []).length > 0 && <><h3>확인 필요</h3><ul className="oq">{body.open_questions.map((q, i) => <li key={i}>{q}</li>)}</ul></>}</>);
 }
-function RecordBody({ rec }) {
-  if (rec.type === "discovery") return <DiscoveryView body={rec.body} />;
+function RecordBody({ rec, pk, onSaved }) {
+  if (rec.type === "discovery") return <DiscoveryView body={rec.body} pk={pk} onSaved={onSaved} />;
   if (rec.type === "features") return <FeaturesView body={rec.body} />;
   return <StructuredView body={rec.body} />;
 }
@@ -261,7 +325,7 @@ export default function App() {
               {awaiting.length > 0
                 ? <button className="btn-primary" disabled={busy} onClick={approve}>{busy ? "처리 중…" : `확정 (${awaiting.map((a) => NODE_LABELS[a] || a).join(", ")})`}</button>
                 : <button className="btn-primary" disabled={busy} onClick={runStep}>{busy ? "실행 중…" : "다음 단계 실행"}</button>}
-              <button className="btn-text" disabled={busy} onClick={() => withBusy(() => refresh(pk))}>새로고침</button>
+              <button className="btn-text" disabled={busy} onClick={() => withBusy(() => refresh(pk))} title="저장된 최신 상태로 화면을 다시 맞춥니다(재조회). 에이전트를 다시 돌리지 않습니다.">재정리</button>
               <button className="btn-text" onClick={() => setView("list")}>← 목록</button>
               {lastRun?.gate && <span className="muted">게이트 <span className={`gate g-${lastRun.gate.test}`}>test {lastRun.gate.test}</span><span className={`gate g-${lastRun.gate.review}`}>review {lastRun.gate.review}</span></span>}
             </div>
@@ -269,7 +333,7 @@ export default function App() {
             {error && <div className="card"><div className="err">{error}</div></div>}
             <div className="card">
               <h2>{NODE_LABELS[node] || node} {selectedRec && <span className="muted">({selectedRec.status} v{selectedRec.version})</span>}</h2>
-              {selectedRec ? (node === "intake" ? <Val v={selectedRec.body} /> : <RecordBody rec={selectedRec} />)
+              {selectedRec ? (node === "intake" ? <Val v={selectedRec.body} /> : <RecordBody rec={selectedRec} pk={pk} onSaved={() => refresh(pk)} />)
                 : <div className="empty">아직 실행 전입니다. 좌측 순서대로 "다음 단계 실행"을 누르세요.</div>}
             </div>
           </>
