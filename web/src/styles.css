@@ -22,6 +22,7 @@
   --md-panel: var(--md-surface-lowest);          /* 카드·사이드바: 화이트(캔버스보다 밝음) */
   --md-line: var(--md-surface-3);                /* 모든 구분선·테두리: 옅은 그레이(#EBEAEB) */
   --md-primary-soft: color-mix(in srgb, var(--md-primary) 10%, var(--md-panel)); /* 활성 메뉴 옅은 인디고 */
+  color-scheme: light;  /* 네이티브 폼 컨트롤(date picker·달력 아이콘·스크롤바)이 테마 따르도록 */
   --r-sm: 4px; --r-md: 8px; --r-lg: 12px; --r-xl: 16px;
   --sp-1: 4px; --sp-2: 8px; --sp-3: 12px; --sp-4: 16px; --sp-6: 24px; --sp-10: 40px;
   --sidebar-w: 280px;
@@ -47,6 +48,7 @@ html[data-theme="dark"] {
   --md-panel: var(--md-surface-1);               /* 카드: 한 단계 상승(캔버스보다 밝음) */
   --md-line: var(--md-surface-3);                /* 옅은 선 */
   --md-primary-soft: color-mix(in srgb, var(--md-primary) 16%, var(--md-panel));
+  color-scheme: dark;
 }
 * { box-sizing: border-box; }
 body { margin: 0; font-family: var(--font); background: var(--md-bg); color: var(--md-on-surface); line-height: 1.6; }
@@ -98,11 +100,12 @@ body, .sidebar, .card, .item, input, textarea, select, .actionbar, .nav-btn, but
 .card h3 { margin: var(--sp-6) 0 var(--sp-2); font-size: 11px; font-weight: 600; color: var(--md-on-surface-variant); text-transform: uppercase; letter-spacing: 0.06em; }
 label { display: block; font-size: 13px; font-weight: 600; margin: var(--sp-3) 0 var(--sp-1); color: var(--md-on-surface); }
 label .req { color: var(--md-danger); } label .opt { color: var(--md-on-surface-variant); font-weight: 400; }
-input[type=text], textarea, select {
+input[type=text], input[type=date], input[type=number], input[type=search], textarea, select {
   width: 100%; padding: 10px 12px; font-size: 14px; font-family: var(--font);
   background: var(--md-surface-lowest); color: var(--md-on-surface);
   border: 0.5px solid var(--md-line); border-radius: var(--r-sm); outline: none;
 }
+input[type=date]::-webkit-calendar-picker-indicator { filter: var(--cal-filter, none); cursor: pointer; }
 textarea { min-height: 80px; resize: vertical; }
 input:focus, textarea:focus, select:focus { border-color: var(--md-primary); box-shadow: 0 0 0 3px color-mix(in srgb, var(--md-primary) 14%, transparent); }
 .hint { font-size: 12px; color: var(--md-on-surface-variant); margin-top: 2px; }
