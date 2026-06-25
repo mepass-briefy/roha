@@ -8,9 +8,6 @@ const IconFolder = () => (
 const IconPlus = () => (
   <svg className="ico" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" /></svg>
 );
-const IconLogout = () => (
-  <svg className="ico" viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9" /></svg>
-);
 const IconTrash = () => (
   <svg className="ico" viewBox="0 0 24 24"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6" /></svg>
 );
@@ -253,7 +250,7 @@ function ProjectList({ onOpen }) {
 }
 
 export default function App() {
-  const [view, setView] = useState("list");   // list | new | node
+  const [view, setView] = useState("new");   // 홈=새 프로젝트 고정. list | new | node
   const [pk, setPk] = useState(null);
   const [statusData, setStatusData] = useState(null);
   const [records, setRecords] = useState([]);
@@ -267,14 +264,8 @@ export default function App() {
   const [reqs, setReqs] = useState("");
   const [platform, setPlatform] = useState("미정");
 
-  // 테마(brand: indigo|red) + 모드(light|dark). index.html이 초기값 설정. 토글 시 data-theme/data-mode + localStorage.
-  const [theme, setTheme] = useState(() => document.documentElement.getAttribute("data-theme") || "indigo");
+  // 테마는 인디고 고정(index.html). 모드(light|dark)만 토글·저장.
   const [mode, setMode] = useState(() => (document.documentElement.getAttribute("data-mode") === "dark" ? "dark" : "light"));
-  const applyTheme = (t) => {
-    document.documentElement.setAttribute("data-theme", t);
-    try { localStorage.setItem("roha-theme", t); } catch { /* noop */ }
-    setTheme(t);
-  };
   const applyMode = (m) => {
     if (m === "dark") document.documentElement.setAttribute("data-mode", "dark");
     else document.documentElement.removeAttribute("data-mode");
@@ -325,24 +316,12 @@ export default function App() {
         </div>
         <div className="sb-bottom">
           <div>
-            <div className="seg-label">테마</div>
-            <div className="seg">
-              <button className={theme === "indigo" ? "on" : ""} onClick={() => applyTheme("indigo")}>인디고</button>
-              <button className={theme === "red" ? "on" : ""} onClick={() => applyTheme("red")}>코랄</button>
-            </div>
-          </div>
-          <div>
             <div className="seg-label">모드</div>
             <div className="seg">
               <button className={mode === "light" ? "on" : ""} onClick={() => applyMode("light")}>라이트</button>
               <button className={mode === "dark" ? "on" : ""} onClick={() => applyMode("dark")}>다크</button>
             </div>
           </div>
-          <div className="profile">
-            <div className="pf-av">R<span className="pf-active" /></div>
-            <div><div className="pf-name">ROHA</div><div className="pf-mail">Workbench</div></div>
-          </div>
-          <button className="logout" title="인증은 아직 미구현입니다"><IconLogout />로그아웃</button>
         </div>
       </aside>
 
