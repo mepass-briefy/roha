@@ -176,7 +176,7 @@ export default function App() {
   const [goal, setGoal] = useState("");
   const [context, setContext] = useState("");
   const [reqs, setReqs] = useState("");
-  const [platform, setPlatform] = useState("both");
+  const [platform, setPlatform] = useState("미정");
 
   // 테마: index.html이 초기 data-theme를 이미 설정함. 여기선 그 값을 읽어 토글/저장만.
   const [theme, setTheme] = useState(() =>
@@ -244,9 +244,9 @@ export default function App() {
             <textarea value={context} onChange={(e) => setContext(e.target.value)} />
             <label>요구사항 <span className="opt">(선택, 줄마다 하나)</span></label>
             <textarea value={reqs} onChange={(e) => setReqs(e.target.value)} />
-            <label>Target Platform</label>
+            <label>Target Platform <span className="opt">(선택, 나중에 확정 가능)</span></label>
             <select value={platform} onChange={(e) => setPlatform(e.target.value)}>
-              <option value="web">web</option><option value="mobile">mobile</option><option value="both">both</option><option value="미정">미정</option>
+              <option value="미정">미정 (나중에 협의해 확정)</option><option value="web">web</option><option value="mobile">mobile</option><option value="both">both</option>
             </select>
             <div className="row" style={{ marginTop: 16 }}>
               <button className="btn-primary" disabled={busy || !goal.trim()} onClick={create}>{busy ? "생성 중…" : "프로젝트 생성"}</button>
