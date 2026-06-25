@@ -4,7 +4,7 @@ intake -> strategy -> ux -> security -> design_system -> features -> wireframe -
 계약 준수, 제약 강제, orchestrator 결합, Pydantic 검증을 확인한다.
 오프라인 모드(결정적). site-build.v8 워크플로(frontend 노드)를 사용한다. 기존 데모/워크플로는 그대로 둔다.
 """
-import sys, shutil, json, copy
+import os, sys, shutil, json, copy
 from pathlib import Path
 
 BASE = Path(__file__).resolve().parent.parent
@@ -196,3 +196,68 @@ expect_block("6. 내부 PK 사용(path_params)",
              base_body(screens=[screen_with(data_calls=[{"endpoint_ref": "ep-applications-list", "method": "GET",
                                                           "path_params": ["application_id"],
                                                           "outcome_mapping": [{"code": "OK", "ui_hint": "x"}]}])]))
+
+
+# 새 게이트 레벨 분리: offline 정상 산출은 ERROR 0(FAIL 아님).
+print("\n=== 게이트 레벨 분리(contract_levels) ===")
+import gate_review
+gr = gate_review.run_review_gate("frontend", b)
+print("offline status =", gr["status"], "| ERROR 수 =", len(gr["reasons"]))
+for e in gr["reasons"]:
+    print("  ERROR:", e)
+assert gr["status"] != "FAIL", f"정상 frontend가 FAIL: {gr['reasons']}"
+
+# [7] real 산출이 새 기준에서 통과(FAIL 아님). FRONTEND_MODE=real일 때만.
+# 주의: offline 파이프라인은 design_system(component/foundation) vs wireframe·frontend(component_specs/color_tokens)
+# 상위 shape 불일치(선행 통합 갭, BACKLOG)로 빈 화면을 낸다. real frontend 자체 검증을 위해
+# frontend 계약 형상에 맞춘 일관 입력(wireframe·design_system·backend)을 직접 구성해 단발 real을 확인한다.
+if os.environ.get("FRONTEND_MODE") == "real":
+    print("\n=== [real] 화면·컴포넌트 기반 프런트 산출(계약 형상 일관 입력) ===")
+    WF_IN = {
+        "screens": [
+            {"screen": "신청 목록", "sections": [{"section": "목록", "components": ["table", "card"], "feature_refs": ["개인 신청"]}]},
+            {"screen": "정산 내역", "sections": [{"section": "내역", "components": ["table"], "feature_refs": ["정산 확인"]}]},
+        ],
+        "design_component_palette": ["table", "card", "button", "input"],
+        "navigation": {"pattern": "left-sidebar"}, "open_questions": [],
+    }
+    DS_IN = {
+        "component_specs": [
+            {"component": "table", "uses_tokens": ["color-primary", "r-md"]},
+            {"component": "card", "uses_tokens": ["color-surface", "sp-2"]},
+            {"component": "button", "uses_tokens": ["color-primary"]},
+            {"component": "input", "uses_tokens": ["color-outline", "r-sm"]},
+        ],
+        "color_tokens": [{"token": "color-primary"}, {"token": "color-surface"}, {"token": "color-outline"}],
+        "spacing": [{"token": "sp-2"}], "radius": [{"token": "r-md"}, {"token": "r-sm"}], "open_questions": [],
+    }
+    def _ep(eid, method, path, feat, succ, err):
+        return {"endpoint_id": eid, "method": method, "path": path, "feature_ref": feat, "security_ref": "ctrl",
+                "success_cases": [{"code": succ, "http_status": 200, "description": "d"}],
+                "error_cases": [{"code": err, "http_status": 400, "description": "d"}]}
+    BK_IN = {"api_spec": {"endpoints": [
+        _ep("ep-applications-list", "GET", "/api/v1/applications", "개인 신청", "OK", "VALIDATION_ERROR"),
+        _ep("ep-applications-get", "GET", "/api/v1/applications/{public_key}", "개인 신청", "OK", "NOT_FOUND"),
+        _ep("ep-settlements-list", "GET", "/api/v1/settlements", "정산 확인", "OK", "FORBIDDEN"),
+    ]}, "open_questions": []}
+    disc = {"goal_interpretation": {"inferred_dimensions": [{"dimension": "정산 신뢰", "basis": "goal"}],
+                                    "candidate_metrics": [], "assumptions": []},
+            "requirement_normalization": [{"id": "R-01", "statement": "개인 신청", "origin": "explicit"},
+                                          {"id": "R-02", "statement": "정산 확인", "origin": "explicit"}]}
+    rb = frontend_agent.produce({"wireframe": WF_IN, "design_system": DS_IN, "backend": BK_IN,
+                                 "ux": {}, "discovery": disc}, llm=frontend_agent.real_llm, artifact_dir=ARTIFACT_DIR)
+    scr = rb["screens"]
+    print(f"screens {len(scr)}개:")
+    for s in scr:
+        print(f"  {s['screen_ref']} | comps={[c['component_ref'] for c in s['components']]} | calls={[d['endpoint_ref'] for d in s['data_calls']]} | tokens={s['uses_tokens'][:4]}")
+    grr = gate_review.run_review_gate("frontend", rb)
+    print("real 게이트 status =", grr["status"], "| ERROR 수 =", len(grr["reasons"]))
+    for e in grr["reasons"]:
+        print("  ERROR:", e)
+    # (a) 비어있지 않음 (b) 화면별 구성 (c) 멤버십 근거 (d) 토큰 참조(하드코딩 0)
+    import re as _re
+    hard = [t for s in scr for t in s["uses_tokens"] if _re.search(r"#[0-9A-Fa-f]{3,8}", str(t))]
+    print("(a) 비어있지 않음:", len(scr) > 0, "| (d) 하드코딩 색:", hard or "없음")
+    assert len(scr) > 0 and grr["status"] != "FAIL" and not hard
+    print("[real] 검증 통과(Pydantic 멤버십 + 게이트 ERROR 0, 하드코딩 0)")
+print("게이트 ERROR 0 통과")

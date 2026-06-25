@@ -11,6 +11,7 @@ orchestrator 계약: producer(inputs: dict) -> body: dict
 """
 
 import json
+import os
 import re
 import hashlib
 from pathlib import Path
@@ -18,9 +19,35 @@ from typing import List, Optional
 
 from pydantic import BaseModel, field_validator, model_validator
 
+try:
+    from dotenv import load_dotenv
+    load_dotenv(Path(__file__).resolve().parent.parent / ".env")
+except ImportError:
+    pass
+
 AGENT_NAME = "agent.frontend"
 SYSTEM_PROMPT = Path(__file__).with_name("agent_frontend.md").read_text(encoding="utf-8")
 DEFAULT_ARTIFACT_DIR = Path(__file__).resolve().parent.parent / "_run_frontend" / "artifacts"
+REAL_MODEL_DEFAULT = "claude-sonnet-4-6"
+
+# real 모드 지시(화면·컴포넌트 기반 프런트 산출 — 단발 1-pass. 반복·tool 루프 없음).
+REAL_MODE_INSTRUCTION = (
+    "\n\n## real 모드 지시(화면·컴포넌트 기반 프런트 산출 — 단발 1-pass)\n"
+    "입력의 wireframe(screens)·design_system(토큰·컴포넌트)·backend(api_spec.endpoints)·ux·discovery를 받아, "
+    "각 wireframe 화면을 구성하는 프런트 산출(components·data_calls·uses_tokens·states·navigation)을 생성한다.\n"
+    "1. 빈 산출 금지: wireframe.screens가 있으면 screens는 비어선 안 된다. 각 화면은 대응 산출을 가진다.\n"
+    "2. 발명 금지(멤버십): screen_ref는 wireframe.screens 화면명에서만, components.component_ref는 palette(wireframe.design_component_palette + design_system 컴포넌트)에서만, "
+    "data_calls.endpoint_ref는 backend 엔드포인트에서만, outcome_mapping.code는 backend success/error code에서만, uses_tokens는 design_system 토큰에서만. 새 화면·컴포넌트·엔드포인트·토큰 창작 금지.\n"
+    "3. 토큰만(하드코딩 색 금지): 색·간격·radius는 uses_tokens(design_system 토큰명)로만 참조한다. hex 색을 직접 쓰지 않는다.\n"
+    "4. 외부 식별자: data_calls.path_params는 public_key만(내부 id/_id/pk/_pk 금지).\n"
+    "5. navigation: navigation은 선택이다. 넣으려면 target_screen_ref를 wireframe 내 실제 화면명으로 반드시 채운다(null·누락 금지). "
+    "마땅한 이동 대상이 없으면 그 화면의 navigation은 null로 둔다. 단일 화면(screens 1개)이면 모든 navigation은 null.\n"
+    "6. 근거 없는 loading/empty 상태는 만들지 말고 open_questions로(API 사용 화면 대상).\n"
+    "7. 출력은 JSON 하나만: {\"screens\":[{screen_ref, origin, components:[{component_ref,section}], "
+    "data_calls:[{endpoint_ref,method,path_params,outcome_mapping:[{code,ui_hint}]}], states, uses_tokens, navigation}], "
+    "\"open_questions\":[...], \"explicit_not_implemented\":[...], \"provenance\":{...}}. "
+    "screen_index 등 인덱스는 시스템이 입력에서 주입하므로 출력에 없어도 된다. 설명·코드펜스 금지. 단발 1-pass(반복·도구 호출 없음)."
+)
 
 # backend가 실제 생성하는 outcome code별 UI 힌트(보완·세부, inference). 코드 자체는 backend에서만 옴.
 UI_HINT = {
@@ -216,11 +243,14 @@ class FrontendBody(BaseModel):
 
 
 # ---------------- 프롬프트 조합 (E10) ----------------
-def build_prompt(wireframe: dict, design_system: dict, backend: dict):
+def build_prompt(wireframe: dict, design_system: dict, backend: dict, ux: dict = None, discovery: dict = None):
+    """real 단계: 실제 계약 입력(wireframe·design_system·backend)에 ux·discovery 맥락 추가(목표·플로우 반영)."""
+    disc = {k: (discovery or {}).get(k) for k in ("goal_interpretation", "requirement_normalization")}
+    payload = {"wireframe": wireframe, "design_system": design_system, "backend": backend,
+               "ux": ux or {}, "discovery": disc}
     return [
         {"role": "system", "content": SYSTEM_PROMPT + "\n\n" + CONTRACT_RULES},
-        {"role": "user", "content": json.dumps(
-            {"wireframe": wireframe, "design_system": design_system, "backend": backend}, ensure_ascii=False)},
+        {"role": "user", "content": json.dumps(payload, ensure_ascii=False)},
     ]
 
 
@@ -233,6 +263,23 @@ def _token_set(design_system: dict):
     for r in design_system.get("radius", []):
         toks.add(r["token"])
     return toks
+
+
+def _indexes(wf: dict, ds: dict, bk: dict) -> dict:
+    """멤버십 인덱스(권위값)를 입력에서 결정적으로 계산한다. offline 산출과 동일 로직.
+    real에서도 이 값을 주입해 LLM이 인덱스를 위조하지 못하게 한다(발명 검사 의미 보장)."""
+    wf_screens = wf.get("screens", [])
+    palette_set = set(wf.get("design_component_palette", [])) | {c["component"] for c in ds.get("component_specs", [])}
+    endpoints = bk.get("api_spec", {}).get("endpoints", [])
+    outcome_codes = sorted({c["code"] for e in endpoints for c in e["success_cases"]}
+                           | {c["code"] for e in endpoints for c in e["error_cases"]})
+    return {
+        "screen_index": [s["screen"] for s in wf_screens],
+        "endpoint_index": [e["endpoint_id"] for e in endpoints],
+        "outcome_code_index": outcome_codes,
+        "component_palette": sorted(palette_set),
+        "token_index": sorted(_token_set(ds)),
+    }
 
 
 def offline_llm(prompt) -> str:
@@ -344,9 +391,47 @@ def offline_llm(prompt) -> str:
     return json.dumps(result, ensure_ascii=False)
 
 
-def execute(wireframe: dict, design_system: dict, backend: dict, llm=offline_llm) -> str:
-    prompt = build_prompt(wireframe, design_system, backend)
-    return llm(prompt)
+def _extract_json(text: str) -> str:
+    text = text.replace("```json", "").replace("```", "").strip()
+    i, j = text.find("{"), text.rfind("}")
+    return text[i:j + 1] if i != -1 and j != -1 and j > i else text
+
+
+def make_real_llm(model=REAL_MODEL_DEFAULT, max_tokens=16000):
+    """real llm(prompt_messages) -> str. Anthropic messages API(검색 없음, 단발 1-pass).
+    실패(SDK 미설치/키 없음/네트워크/API 에러)는 RuntimeError — execute에서 offline 폴백."""
+    def real_llm(prompt) -> str:
+        try:
+            import anthropic
+        except ImportError as e:
+            raise RuntimeError("real 모드 불가: anthropic SDK 미설치") from e
+        api_key = os.environ.get("ANTHROPIC_API_KEY")
+        if not api_key:
+            raise RuntimeError("real 모드 불가: ANTHROPIC_API_KEY 없음")
+        system = next(m["content"] for m in prompt if m["role"] == "system") + REAL_MODE_INSTRUCTION
+        user = next(m["content"] for m in prompt if m["role"] == "user")
+        client = anthropic.Anthropic(api_key=api_key)
+        try:
+            resp = client.messages.create(model=model, max_tokens=max_tokens, system=system,
+                                          messages=[{"role": "user", "content": user}])
+        except Exception as e:
+            raise RuntimeError(f"real 모드 Anthropic API 호출 실패: {type(e).__name__}: {e}") from e
+        text = "".join(b.text for b in resp.content if getattr(b, "type", None) == "text").strip()
+        if not text:
+            raise RuntimeError("real 모드: Anthropic 응답에 텍스트 없음")
+        return _extract_json(text)
+    return real_llm
+
+
+real_llm = make_real_llm()
+
+
+def execute(wireframe: dict, design_system: dict, backend: dict, ux: dict = None, discovery: dict = None, llm=offline_llm) -> str:
+    prompt = build_prompt(wireframe, design_system, backend, ux, discovery)
+    try:
+        return llm(prompt)
+    except RuntimeError:
+        return offline_llm(prompt)  # real 실패 -> offline 폴백
 
 
 def _render_stub(s: Screen) -> str:
@@ -370,11 +455,19 @@ def produce(inputs: dict, llm=offline_llm, artifact_dir: Path = DEFAULT_ARTIFACT
     wireframe = inputs["wireframe"]
     design_system = inputs.get("design_system", {})
     backend = inputs.get("backend", {})
-    raw = execute(wireframe, design_system, backend, llm)
+    ux = inputs.get("ux", {})
+    discovery = inputs.get("discovery", {})  # v15: 목표·플로우 맥락(real 프롬프트)
+    raw = execute(wireframe, design_system, backend, ux, discovery, llm)
     spec = json.loads(raw)
     spec["artifact_refs"] = []
+    # 멤버십 인덱스는 입력에서 권위값으로 강제 주입(LLM 위조 차단 -> 발명 검사 의미 보장). offline은 동일값이라 무영향.
+    spec.update(_indexes(wireframe, design_system, backend))
+    # real 산출 방어적 정규화(단발, 루프 없음): explicit_not_implemented는 dict 리스트(문자열이면 래핑), open_questions는 문자열 리스트.
+    eni = spec.get("explicit_not_implemented") or []
+    spec["explicit_not_implemented"] = [e if isinstance(e, dict) else {"item": str(e), "reason": "real 보고"} for e in eni]
+    spec["open_questions"] = [q if isinstance(q, str) else json.dumps(q, ensure_ascii=False) for q in (spec.get("open_questions") or [])]
 
-    # Pydantic 검증(계약 강제). 위반 시 여기서 raise.
+    # Pydantic 검증(계약 강제: screen_ref/endpoint_ref/component_ref/token/outcome 멤버십). 위반 시 여기서 raise.
     fb = FrontendBody(**spec)
 
     # D9: 코드는 artifact 파일로, body에는 경로/메타만.

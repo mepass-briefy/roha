@@ -56,6 +56,7 @@ def build_producers(art_dir: Path):
     ds_llm = ds_agent.real_llm if os.environ.get("DESIGN_SYSTEM_MODE") == "real" else ds_agent.offline_llm
     wf_llm = wireframe_agent.real_llm if os.environ.get("WIREFRAME_MODE") == "real" else wireframe_agent.offline_llm
     be_llm = backend_agent.real_llm if os.environ.get("BACKEND_MODE") == "real" else backend_agent.offline_llm
+    fe_llm = frontend_agent.real_llm if os.environ.get("FRONTEND_MODE") == "real" else frontend_agent.offline_llm
     if os.environ.get("FEATURES_MODE") == "real":
         feat_llm = features_agent.make_real_llm(use_search=(os.environ.get("FEATURES_SEARCH") == "on"))
     else:
@@ -68,7 +69,7 @@ def build_producers(art_dir: Path):
         "features": features_agent.make_producer(feat_llm),
         "wireframe": wireframe_agent.make_producer(wf_llm),
         "backend": backend_agent.make_producer(be_llm, artifact_dir=art_dir),
-        "frontend": frontend_agent.make_producer(artifact_dir=art_dir),
+        "frontend": frontend_agent.make_producer(fe_llm, artifact_dir=art_dir),
     }
 
 
