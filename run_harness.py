@@ -70,6 +70,14 @@ def build_producers(art_dir: Path):
         feat_llm = features_agent.make_real_llm(use_search=(os.environ.get("FEATURES_SEARCH") == "on"))
     else:
         feat_llm = features_agent.offline_llm
+    # backend: BACKEND_RUNTIME=on이면 Agentic Runtime(generate-gate-repair-retry-converge), 끄면 기존 단발 그대로.
+    if os.environ.get("BACKEND_RUNTIME") == "on":
+        import backend_runtime
+        backend_producer = backend_runtime.make_runtime_producer(
+            be_llm, art_dir,
+            history_sink=backend_runtime.jsonl_history_sink(art_dir / "backend_iterations.jsonl"))
+    else:
+        backend_producer = backend_agent.make_producer(be_llm, artifact_dir=art_dir)
     return {
         "discovery": discovery_agent.make_producer(disc_llm),
         "strategy": strategy_agent.make_producer(strat_llm),
@@ -78,7 +86,7 @@ def build_producers(art_dir: Path):
         "design_system": ds_agent.make_producer(ds_llm),
         "features": features_agent.make_producer(feat_llm),
         "wireframe": wireframe_agent.make_producer(wf_llm),
-        "backend": backend_agent.make_producer(be_llm, artifact_dir=art_dir),
+        "backend": backend_producer,
         "frontend": frontend_agent.make_producer(fe_llm, artifact_dir=art_dir),
         "mobile": mobile_agent.make_producer(mb_llm, artifact_dir=art_dir),
     }
