@@ -252,3 +252,39 @@ ul.oq { margin:8px 0 0; padding-left:18px; } ul.oq li { font-size:13px; color:va
 .wf-ctl { width:16px; height:16px; border:1.5px solid var(--text-3); flex:none; border-radius:4px; }
 .wf-ctl-toggle { width:28px; height:16px; border-radius:999px; }
 .wf-ctl-radio_card { border-radius:50%; }
+
+/* ===== 프로젝트 목록: 2열 카드 그리드 (Forge 와이어프레임) ===== */
+.proj-page { max-width:1080px; }
+.list-head { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; margin-bottom:4px; }
+.list-title { font-size:22px; font-weight:700; letter-spacing:-.01em; margin:0; }
+.list-sub { color:var(--text-2); font-size:13px; margin-top:4px; }
+.new-proj { display:inline-flex; align-items:center; gap:7px; white-space:nowrap; }
+.new-proj .ico { width:16px; height:16px; }
+
+.search-row { display:flex; gap:10px; align-items:center; margin:18px 0 10px; }
+.search-box { flex:1; display:flex; align-items:center; gap:9px; background:var(--card); border:.5px solid var(--line-strong);
+  border-radius:var(--r-md); padding:9px 13px; }
+.search-box .ico { width:16px; height:16px; color:var(--text-3); flex:none; }
+.search-box input { border:none; background:transparent; padding:0; width:100%; font-size:13px; outline:none; }
+.seg-sel { width:auto; flex:none; }
+
+.filter-row { display:flex; align-items:center; gap:8px; font-size:12px; margin-bottom:18px; }
+.filter-row input[type=date] { width:auto; }
+
+.proj-grid { display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); gap:16px; }
+.proj-card { background:var(--card); border:.5px solid var(--line); border-radius:var(--r-lg); padding:18px 20px; cursor:pointer;
+  display:flex; flex-direction:column; gap:11px; transition:border-color .15s,background .15s; }
+.proj-card:hover { border-color:var(--line-strong); background:var(--raised); }
+.pc-top { display:flex; align-items:center; justify-content:space-between; gap:10px; }
+.pc-name { font-size:15px; font-weight:600; letter-spacing:-.01em; }
+.pc-badge { font-size:11px; font-weight:600; padding:3px 11px; border-radius:999px; flex:none; }
+.pc-badge.is-active { background:var(--primary-container); color:var(--on-primary-container); }
+.pc-badge.is-done { background:var(--success); color:var(--on-semantic); }
+.pc-key { font-size:11px; color:var(--text-3); margin-top:-4px; }
+.pc-bar { height:6px; border-radius:999px; background:var(--raised); overflow:hidden; }
+.pc-bar-fill { display:block; height:100%; background:var(--primary); border-radius:999px; }
+.pc-foot { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-top:2px; }
+.pc-actions { display:flex; align-items:center; gap:6px; }
+.pc-pct { font-size:12px; color:var(--text-2); }
+.pc-pct b { font-size:14px; color:var(--text); font-weight:600; margin-left:2px; }
+@media (max-width:760px) { .proj-grid { grid-template-columns:1fr; } }

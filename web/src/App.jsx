@@ -242,11 +242,12 @@ function RecordBody({ rec, pk, onSaved }) {
   return <StructuredView body={rec.body} />;
 }
 
-function ProjectList({ onOpen, tab }) {
-  // tab(active|done)은 사이드바 2depth 메뉴가 제어(탭 아님). 워크벤치는 진행 중에 초점, 완료는 아카이브.
+function ProjectList({ onOpen, tab, onNew }) {
+  // tab(active|done)은 사이드바 2depth 메뉴가 제어. 와이어프레임: 표 아님, 2열 카드 그리드 + 검색 + 새 프로젝트.
   const [sort, setSort] = useState("recent");
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
+  const [q, setQ] = useState("");
   const [page, setPage] = useState(1);
   const [data, setData] = useState({ projects: [], total: 0, page: 1, page_size: 20 });
   const [busy, setBusy] = useState(false);
@@ -263,50 +264,67 @@ function ProjectList({ onOpen, tab }) {
 
   const act = async (fn) => { await fn(); await load(); };
   const pages = Math.max(1, Math.ceil(data.total / data.page_size));
+  const shown = data.projects.filter((p) => !q || (p.title + " " + p.business_key).toLowerCase().includes(q.toLowerCase()));
 
   return (
-    <div className="card">
-      <h2>{tab === "done" ? "완료 (아카이브)" : "진행 중 프로젝트"}</h2>
-      <div className="sub">{tab === "done" ? "완료된 프로젝트 보관함입니다." : "진행 중인 프로젝트입니다. 멈춘 작업을 이어서 진행하세요."}</div>
-      <div className="toolbar">
-        <label>정렬</label>
-        <select value={sort} onChange={(e) => setSort(e.target.value)}>
+    <div className="proj-page">
+      <div className="list-head">
+        <div>
+          <h2 className="list-title">{tab === "done" ? "완료" : "프로젝트"}</h2>
+          <div className="list-sub">{tab === "done" ? "완료된 프로젝트 보관함입니다." : `총 ${data.total}개 워크스페이스 · 진행 중인 작업을 이어서 진행하세요`}</div>
+        </div>
+        <button className="btn-primary new-proj" onClick={onNew}><IconPlus />새 프로젝트</button>
+      </div>
+
+      <div className="search-row">
+        <div className="search-box">
+          <svg className="ico" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7" /><path d="M21 21l-4-4" /></svg>
+          <input type="search" placeholder="프로젝트·repo·에이전트 검색…" value={q} onChange={(e) => setQ(e.target.value)} />
+        </div>
+        <select className="seg-sel" value={sort} onChange={(e) => setSort(e.target.value)}>
           <option value="recent">최근순</option>
           <option value="incomplete">미완성순</option>
         </select>
-        <label>기간</label>
+      </div>
+
+      <div className="filter-row">
+        <span className="muted">기간</span>
         <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
         <span className="muted">~</span>
         <input type="date" value={to} onChange={(e) => setTo(e.target.value)} />
         {(from || to) && <button className="btn-text" onClick={() => { setFrom(""); setTo(""); }}>기간 해제</button>}
         <span className="muted" style={{ marginLeft: "auto" }}>총 {data.total}건</span>
       </div>
-      {data.projects.length === 0
+
+      {shown.length === 0
         ? <div className="empty">{busy ? "불러오는 중…" : "프로젝트가 없습니다."}</div>
         : (
-          <table className="ptable">
-            <thead><tr><th>제목</th><th>진행도</th><th>생성</th><th style={{ width: 220 }}>액션</th></tr></thead>
-            <tbody>
-              {data.projects.map((p) => {
-                const pct = Math.round((p.progress.confirmed / p.progress.total) * 100);
-                return (
-                  <tr key={p.public_key}>
-                    <td>{p.title}{p.status === "done" && <span className="chip-done" style={{ marginLeft: 8 }}>완료</span>}<div className="muted" style={{ fontSize: 11 }}>{p.business_key}</div></td>
-                    <td><span className="bar"><span className="bar-fill" style={{ width: pct + "%" }} /></span> <span className="muted">{p.progress.confirmed}/{p.progress.total}</span></td>
-                    <td className="muted">{fmtDate(p.created_at)}</td>
-                    <td>
-                      <button className="btn-tonal rowbtn" onClick={() => onOpen(p.public_key)}>열기</button>
+          <div className="proj-grid">
+            {shown.map((p) => {
+              const pct = Math.round((p.progress.confirmed / p.progress.total) * 100);
+              return (
+                <div className="proj-card" key={p.public_key} onClick={() => onOpen(p.public_key)} role="button" tabIndex={0}>
+                  <div className="pc-top">
+                    <div className="pc-name">{p.title}</div>
+                    <span className={`pc-badge ${p.status === "done" ? "is-done" : "is-active"}`}>{p.status === "done" ? "완료" : "진행중"}</span>
+                  </div>
+                  <div className="pc-key">{p.business_key}</div>
+                  <div className="pc-bar"><span className="pc-bar-fill" style={{ width: pct + "%" }} /></div>
+                  <div className="pc-foot">
+                    <div className="pc-actions" onClick={(e) => e.stopPropagation()}>
                       {p.status === "done"
                         ? <button className="btn-text rowbtn" onClick={() => act(() => api.reopen(p.public_key))}>재개</button>
                         : <button className="btn-text rowbtn" onClick={() => act(() => api.complete(p.public_key))}>완료</button>}
                       <button className="rowbtn del" onClick={() => { if (confirm("이 프로젝트를 삭제(숨김)할까요?")) act(() => api.remove(p.public_key)); }}><IconTrash />삭제</button>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+                    </div>
+                    <div className="pc-pct">{p.progress.confirmed}/{p.progress.total} <b>{pct}%</b></div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         )}
+
       <div className="pager">
         <button className="btn-text" disabled={page <= 1} onClick={() => setPage(page - 1)}>← 이전</button>
         <span className="muted">{page} / {pages}</span>
@@ -403,7 +421,7 @@ export default function App() {
       </aside>
 
       <main className="main">
-        {view === "list" && <ProjectList onOpen={openProject} tab={listTab} />}
+        {view === "list" && <ProjectList onOpen={openProject} tab={listTab} onNew={() => { setView("new"); setPk(null); setNode(null); }} />}
 
         {view === "new" && (
           <div className="card">
