@@ -176,7 +176,7 @@ def offline_llm(system: str, user: str) -> str:
     return json.dumps(body, ensure_ascii=False)
 
 
-def make_real_llm(model=REAL_MODEL_DEFAULT, max_tokens=8192, max_searches=WEB_SEARCH_MAX_USES_DEFAULT,
+def make_real_llm(model=REAL_MODEL_DEFAULT, max_tokens=16000, max_searches=WEB_SEARCH_MAX_USES_DEFAULT,
                   use_search=False):
     """real llm(system, user) -> str. Anthropic messages API(+선택적 web_search).
     실패는 mock 폴백 없이 RuntimeError. use_search=True면 경쟁사 기능 조사(Competitive Reference)."""
@@ -226,18 +226,13 @@ def _ambiguous_terms(discovery: dict):
     return terms
 
 
-def produce(inputs: dict, llm=offline_llm) -> dict:
-    intake = inputs["intake"]
-    ux = inputs.get("ux", {})
-    security = inputs.get("security", {})
-    strategy = inputs.get("strategy", {})
-    discovery = inputs.get("discovery", {})  # v12: discovery 입력 연결(받기만, 활용은 real 단계 프롬프트에서)
-    raw = llm(SYSTEM_PROMPT, build_user_prompt(intake, ux, security, strategy))
-    raw = raw.replace("```json", "").replace("```", "").strip()
-    body = json.loads(raw)
-    body = validate(body)
-    # [방식 B 태깅] discovery가 모호로 표시한 요구를 features가 구체화했는지 표식.
-    # 게이트가 이 표식 + origin=fact를 WARN[과추론]으로 surface(사람 확정 신호). 산출 의미 불변(주석 필드만 추가).
+FEAT_SPLIT_THRESHOLD = 8   # 이 이상 태스크면 real에서 배치 분할(대형 브리프 truncation 해소)
+FEAT_BATCH = 4             # 배치 크기(태스크는 역할 순서라 순서 배치=역할 응집)
+
+
+def _tag_over_inference(body: dict, discovery: dict) -> dict:
+    """[방식 B 태깅] discovery가 모호로 표시한 요구를 features가 구체화(origin=fact)했는지 표식.
+    게이트가 이 표식을 WARN[과추론]으로 surface. 산출 의미 불변(주석 필드만)."""
     amb = _ambiguous_terms(discovery)
     for f in body.get("features", []):
         chain = (str(f.get("source", "")) + " " + str(f.get("feature", ""))).lower()
@@ -246,6 +241,51 @@ def produce(inputs: dict, llm=offline_llm) -> dict:
         if hit:
             f["ambiguous_requirement"] = hit
     return body
+
+
+def _merge_features(parts: list) -> dict:
+    """배치 산출들 -> 하나의 features 산출(기존 스키마 동형). 기능명 dedupe(보완 기능 배치 중복 차단)."""
+    feats, oq, prov = [], [], None
+    seen = set()
+    for b in parts:
+        if prov is None:
+            prov = b.get("provenance")
+        for f in (b.get("features") or []):
+            nm = f.get("feature")
+            if nm in seen:
+                continue
+            seen.add(nm)
+            feats.append(f)
+        oq += b.get("open_questions") or []
+    return {"features": feats, "open_questions": list(dict.fromkeys(oq)),
+            "provenance": prov or {"features": "per_item", "priority": "inference",
+                                   "acceptance_criteria": "inference", "security_controls": "fact"}}
+
+
+def produce(inputs: dict, llm=offline_llm) -> dict:
+    intake = inputs["intake"]
+    ux = inputs.get("ux", {})
+    security = inputs.get("security", {})
+    strategy = inputs.get("strategy", {})
+    discovery = inputs.get("discovery", {})  # v12: discovery 입력 연결(받기만, 활용은 real 단계 프롬프트에서)
+    tasks = (ux or {}).get("primary_tasks", []) or []
+    # 대형 브리프(real): 태스크를 배치로 나눠 호출 -> 각 호출 출력이 작아 truncation 해소. 합친 결과는 기존 스키마 동형.
+    if llm is not offline_llm and len(tasks) >= FEAT_SPLIT_THRESHOLD:
+        flows = (ux or {}).get("user_flows", []) or []
+        parts = []
+        for i in range(0, len(tasks), FEAT_BATCH):
+            batch = tasks[i:i + FEAT_BATCH]
+            names = {t.get("task") for t in batch}
+            ux_sub = dict(ux)
+            ux_sub["primary_tasks"] = batch
+            ux_sub["user_flows"] = [f for f in flows if f.get("task") in names]
+            raw = llm(SYSTEM_PROMPT, build_user_prompt(intake, ux_sub, security, strategy))
+            parts.append(json.loads(_extract_json(raw)))
+        return _tag_over_inference(validate(_merge_features(parts)), discovery)
+    # 단일 경로(offline 또는 소형 real). 기존 동작 보존.
+    raw = llm(SYSTEM_PROMPT, build_user_prompt(intake, ux, security, strategy))
+    body = validate(json.loads(_extract_json(raw)))
+    return _tag_over_inference(body, discovery)
 
 
 def make_producer(llm=offline_llm):

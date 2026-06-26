@@ -125,7 +125,7 @@ def _extract_json(text: str) -> str:
     return text[i:j + 1] if i != -1 and j != -1 and j > i else text
 
 
-def make_real_llm(model=REAL_MODEL_DEFAULT, max_tokens=4096, max_searches=WEB_SEARCH_MAX_USES_DEFAULT):
+def make_real_llm(model=REAL_MODEL_DEFAULT, max_tokens=8192, max_searches=WEB_SEARCH_MAX_USES_DEFAULT):
     """real llm(system, user) -> str. Anthropic messages API + server-side web_search 도구.
     실패(SDK 미설치/키 없음/네트워크/API 에러)는 mock 폴백 없이 RuntimeError로 드러낸다."""
     def real_llm(system: str, user: str) -> str:

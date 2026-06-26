@@ -78,4 +78,30 @@ assert names.count("로그인") == 1, "공통 화면 중복 차단 실패"
 assert len([n for n in names if n.startswith("화면")]) == 14, "IA 14화면 누락"
 wf.validate(wb)
 print(" PASS: 공통 중복 0·14화면 보존·스키마 동형")
+
+# ---- features 분할 ----
+import features as ftr
+def fake_feat(system, user):
+    d = json.loads(user)
+    tasks = [t["task"] for t in d.get("ux", {}).get("primary_tasks", [])]
+    feats = [{"feature": t, "category": "Explicit", "source": f"ux:{t}", "origin": "fact",
+              "priority": "medium", "acceptance_criteria": ["a"], "security_controls": []} for t in tasks]
+    # 보완 기능을 매 배치가 함께 산출 -> 병합 dedupe로 1개만 남아야
+    feats.append({"feature": "차별 기능: 공통보완", "category": "Derived", "source": "derived:strategy",
+                  "origin": "inference", "priority": "low", "acceptance_criteria": [], "security_controls": []})
+    return json.dumps({"features": feats, "open_questions": ["fq"],
+                       "provenance": {"features": "per_item", "priority": "inference",
+                                      "acceptance_criteria": "inference", "security_controls": "fact"}}, ensure_ascii=False)
+
+print("\n=== features 배치 분할(22태스크 + 보완 중복) ===")
+TASKS = [{"task": f"태스크{i}"} for i in range(1, 23)]
+fb = ftr.produce({"intake": {"requirements": []}, "ux": {"primary_tasks": TASKS, "user_flows": []},
+                  "security": {}, "strategy": {}, "discovery": {}}, llm=fake_feat)
+fnames = [f["feature"] for f in fb["features"]]
+print(" 기능 수:", len(fnames), "| 유일:", len(set(fnames)) == len(fnames))
+print(" 보완(공통) 개수:", fnames.count("차별 기능: 공통보완"), "(1이어야 중복 차단)")
+assert len([n for n in fnames if n.startswith("태스크")]) == 22, "22태스크 기능 누락"
+assert fnames.count("차별 기능: 공통보완") == 1, "보완 기능 중복 차단 실패"
+ftr.validate(fb)
+print(" PASS: 보완 중복 0·22기능 보존·스키마 동형")
 print("\nDONE")
