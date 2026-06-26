@@ -93,22 +93,43 @@ def default_converge(gate_result, it, max_iter, prev_gate=None, changed=True):
     return {"stop": False, "reason": "repairing"}
 
 
+def _gate_counts(gr):
+    g = gr or {}
+    return len(g.get("errors") or []), len(g.get("warnings") or [])
+
+
 def run_loop(record_type, inputs, generate, gate, repair,
              converge=default_converge, max_iter=DEFAULT_MAX_ITER,
              max_calls=None, history_sink=None, clock=None):
     """Generate->Gate->Converge?->Repair 루프. 에이전트 지식 없음.
-    반환: {final_body, converged, reason, iterations(append-only history), calls}.
-    iteration 레코드: {iter, body, gate_result, repair, diff, applied_directive, converged, stop, reason, ts}."""
+    ERROR monotonic 강화: ERROR를 늘리는 재산출(회귀)은 다음 repair의 기반(prior)으로 채택하지 않는다.
+      기각본도 history엔 전량 저장(append-only 불변, rejected=True). 다음 repair는 직전 채택본(ERROR 더 적은)에서 재시도.
+    종료 시 best-so-far(ERROR 최소 -> WARN 최소 -> 최신) 반환. ERROR 잔존이면 final_status=FAIL(숨기지 않음).
+    Converge 정책(ERROR 0 필수 + WARN best-effort)은 불변 — 채택된 현재 상태(base_gate)로 판정한다.
+    반환: {final_body, converged, reason, iterations, calls, best_iter, final_status, final_errors}.
+    iteration 레코드: {iter, body, gate_result, diff, applied_directive, rejected, converged, stop, reason, repair, ts}."""
     clock = clock or time.time
     cap = max_calls if max_calls is not None else max_iter
     history = []
-    prev_body = None
-    prev_gate = None
-    directive = None  # 다음 generate에 주입할 보강 지시(직전 iter repair 결과)
-    body = None
-    gr = None
+    base_body = None       # 채택된 기반: 다음 generate의 prior, 다음 repair의 대상
+    base_gate = None
+    best = None            # {"body","gate","iter"} — ERROR 최소 -> WARN 최소 -> 최신
+    prev_raw_body = None   # no_progress 판정(직전 raw 산출 대비 변화)
+    prev_raw_gate = None
+    directive = None       # 다음 generate에 주입할 보강 지시(채택본 repair 결과)
     reason = "max_iter"
     calls = 0
+
+    def _is_better(gr, it, cur):
+        if cur is None:
+            return True
+        e, w = _gate_counts(gr)
+        ce, cw = _gate_counts(cur["gate"])
+        if e != ce:
+            return e < ce
+        if w != cw:
+            return w < cw
+        return it >= cur["iter"]  # 동률이면 최신
 
     for it in range(1, max_iter + 1):
         if calls >= cap:
@@ -118,35 +139,57 @@ def run_loop(record_type, inputs, generate, gate, repair,
         # generate 실패(파싱·스키마 등 생산자 구조 계약 위반)는 crash가 아니라 수리 대상 iteration으로 다룬다.
         # 판정 자체는 Gate가 유일하지만, Gate에 도달조차 못한 구조 실패는 그 사유를 repair로 환류한다(self-critique 아님).
         try:
-            body = generate(inputs, prior=prev_body, repair_directive=applied)
+            body = generate(inputs, prior=base_body, repair_directive=applied)
             calls += 1
             gr = gate(record_type, body)
         except Exception as e:
             calls += 1
-            body = prev_body
+            body = base_body
             gr = {"errors": [f"[생성 실패] {type(e).__name__}: {e}"], "warnings": [], "status": "FAIL"}
-        changed = not (prev_body is not None
-                       and _canon(body) == _canon(prev_body) and gr == prev_gate)
-        decision = converge(gr, it, max_iter, prev_gate=prev_gate, changed=changed)
+
+        n_err = _gate_counts(gr)[0]
+        base_err = _gate_counts(base_gate)[0] if base_gate is not None else None
+        # ERROR 회귀 기각: 직전 채택본보다 ERROR가 늘면 기각(다음 prior/repair 대상에서 제외). history엔 남긴다.
+        rejected = base_gate is not None and n_err > base_err
+
+        prev_base_gate = base_gate
+        if not rejected:
+            base_body, base_gate = body, gr
+
+        # best-so-far 갱신(기각본 포함 비교 — ERROR 최소 기준이라 회귀본은 선택되지 않는다).
+        if _is_better(gr, it, best):
+            best = {"body": body, "gate": gr, "iter": it}
+
+        # no_progress: 직전 raw 산출 대비 변화 여부(반복된 동일 회귀/정체 차단).
+        raw_changed = not (prev_raw_body is not None
+                           and _canon(body) == _canon(prev_raw_body) and gr == prev_raw_gate)
+        # Converge는 '채택된 현재 상태'(base_gate)로 판정 — 회귀를 기각했으면 ERROR 0 상태 유지로 본다(정책 불변).
+        decision = converge(base_gate, it, max_iter, prev_gate=prev_base_gate, changed=raw_changed)
+
         rec = {
             "iter": it, "body": body, "gate_result": gr,
-            "diff": diff_bodies(prev_body, body), "applied_directive": applied,
-            "converged": decision["stop"] and not (gr.get("errors") or []),
+            "diff": diff_bodies(prev_raw_body, body), "applied_directive": applied,
+            "rejected": rejected,
+            "converged": decision["stop"] and not (base_gate.get("errors") or []),
             "stop": decision["stop"], "reason": decision["reason"], "repair": None,
             "ts": clock(),
         }
         if not decision["stop"]:
-            directive = repair(body, gr)
+            directive = repair(base_body, base_gate)  # 채택본 기반 repair(회귀본 아님)
             rec["repair"] = directive
         history.append(rec)
         if history_sink:
             history_sink(rec)
-        prev_body = body
-        prev_gate = gr
+        prev_raw_body, prev_raw_gate = body, gr
         if decision["stop"]:
             reason = decision["reason"]
             break
 
-    converged = bool(gr is not None and not (gr.get("errors") or []))
-    return {"final_body": body, "converged": converged, "reason": reason,
-            "iterations": history, "calls": calls}
+    best_body = best["body"] if best else None
+    best_gate = best["gate"] if best else {"errors": [], "warnings": []}
+    n_err, n_warn = _gate_counts(best_gate)
+    final_status = "FAIL" if n_err else ("WARN" if n_warn else "PASS")
+    return {"final_body": best_body, "converged": (n_err == 0), "reason": reason,
+            "iterations": history, "calls": calls,
+            "best_iter": (best["iter"] if best else None),
+            "final_status": final_status, "final_errors": n_err}

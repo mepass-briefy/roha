@@ -93,11 +93,70 @@ assert r["converged"] and r["reason"] == "error_cleared", "복구 수렴 실패"
 assert r["iterations"][0]["repair"] and "[생성 실패]" in r["iterations"][0]["repair"]
 print(" ", PASS)
 
+print("\n=== [5a] ERROR 회귀 기각: v1 ERR0 -> v2 ERR1(WARN보강이 ERROR유발) -> v2 기각, 반환=v1 ===")
+def make_gen_regress():
+    n = {"i": 0}
+    def gen(inputs, prior=None, repair_directive=None):
+        n["i"] += 1
+        if n["i"] == 1:
+            return {"x": 1, "_warnings": ["[품질] w"]}  # ERR0/WARN1
+        return {"x": n["i"], "_errors": ["[빈 산출] WARN보강이 깨뜨림"], "_warnings": ["[품질] w"]}  # ERR1 회귀(body 매번 다름)
+    return gen
+r = rt.run_loop("backend", {}, make_gen_regress(), fake_gate, rt.default_repair, max_iter=3)
+print(f"  반환 best iter={r['best_iter']} body={r['final_body']} status={r['final_status']} reason={r['reason']}")
+print(f"  iter별 rejected={[it['rejected'] for it in r['iterations']]} ERROR={[len(it['gate_result']['errors']) for it in r['iterations']]}")
+assert r["final_body"]["x"] == 1 and r["best_iter"] == 1, "반환이 best(v1 ERR0) 아님"
+assert r["converged"] and r["final_status"] == "WARN", "best가 ERR0이어야"
+assert r["iterations"][1]["rejected"] and r["iterations"][1]["gate_result"]["errors"], "v2 기각·전량 저장 아님"
+print(" ", PASS)
+
+print("\n=== [5b] best 선정: ERR 동률->WARN 최소->최신 ===")
+def seq_gen(seq):
+    n = {"i": 0}
+    def gen(inputs, prior=None, repair_directive=None):
+        v = seq[min(n["i"], len(seq) - 1)]; n["i"] += 1
+        return dict(v)
+    return gen
+# ERR 모두 1, WARN: v1=3 v2=1 v3=2 -> best=v2(WARN 최소)
+r = rt.run_loop("backend", {}, seq_gen([
+    {"x": 1, "_errors": ["e"], "_warnings": ["a", "b", "c"]},
+    {"x": 2, "_errors": ["e"], "_warnings": ["a"]},
+    {"x": 3, "_errors": ["e"], "_warnings": ["a", "b"]}]), fake_gate, rt.default_repair, max_iter=3)
+print(f"  best_iter={r['best_iter']} (기대 2, WARN 최소)")
+assert r["best_iter"] == 2, "WARN 최소 iter가 best여야"
+# ERR0/WARN 동률(둘 다 WARN1) -> 최신
+r2 = rt.run_loop("backend", {}, seq_gen([
+    {"x": 1, "_warnings": ["a"]}, {"x": 2, "_warnings": ["a"]}]), fake_gate, rt.default_repair, max_iter=2)
+print(f"  동률 best_iter={r2['best_iter']} (기대 2, 최신)")
+assert r2["best_iter"] == 2, "동률이면 최신이 best여야"
+print(" ", PASS)
+
+print("\n=== [5c] 미수렴 반환: 전 iter ERROR 잔존 -> best(ERROR 최소) 반환 + status=FAIL ===")
+def make_gen_allerr():
+    n = {"i": 0}
+    def gen(inputs, prior=None, repair_directive=None):
+        n["i"] += 1
+        return {"x": n["i"], "_errors": ["[발명] 못 고침"]}
+    return gen
+r = rt.run_loop("backend", {}, make_gen_allerr(), fake_gate, rt.default_repair, max_iter=3)
+print(f"  converged={r['converged']} status={r['final_status']} errors={r['final_errors']} reason={r['reason']}")
+assert not r["converged"] and r["final_status"] == "FAIL" and r["final_errors"] == 1
+assert r["reason"] == "max_iter"
+print(" ", PASS)
+
+print("\n=== [5d] 정상 수렴: error_cleared 시 반환=마지막(=best), 회귀 없음 ===")
+# 위 error_cleared 테스트 재사용 형태: v1 ERR1 -> v2 ERR0 -> v3 clean
+r = rt.run_loop("backend", {}, make_gen_heal(), fake_gate, rt.default_repair, max_iter=4)
+assert r["converged"] and r["final_status"] == "PASS" and r["best_iter"] == len(r["iterations"])
+assert not any(it["rejected"] for it in r["iterations"]), "정상 수렴엔 기각 없어야"
+print(f"  best_iter={r['best_iter']}(=마지막) status={r['final_status']} 기각수={sum(it['rejected'] for it in r['iterations'])}")
+print(" ", PASS)
+
 # diff·history 형태 점검
 print("\n=== [4] iteration history/diff 형태 ===")
 last = r["iterations"][-1]
 print("  iteration 키:", sorted(last.keys()))
-assert set(["iter", "body", "gate_result", "diff", "repair", "converged", "reason", "ts", "applied_directive", "stop"]) <= set(last.keys())
+assert set(["iter", "body", "gate_result", "diff", "repair", "converged", "reason", "ts", "applied_directive", "stop", "rejected"]) <= set(last.keys())
 print("  diff(예):", r["iterations"][1]["diff"])
 print(" ", PASS)
 
@@ -148,15 +207,19 @@ if os.environ.get("RUNTIME_REAL") == "on":
             print("      ERROR:", gr["errors"][:2])
         if it["diff"]:
             print("      diff:", it["diff"])
-    # 루프 불변식(real 비결정 무관): 경계 종료·발명 0·history 전량. ERROR->0 감소 기전은 [5] error_cleared가 결정적 증명.
-    fin = res["iterations"][-1]["gate_result"]
-    invented = [e for e in fin["errors"] if "[발명]" in e]
-    print(f"  최종 ERROR={len(fin['errors'])} (발명={len(invented)}) converged={res['converged']} | history 저장:", hist_path.exists())
+    # best-so-far 반환 + 회귀 기각 검증. ERROR->0 감소 기전은 [5] error_cleared가 결정적 증명.
+    iter_errs = [len(it["gate_result"]["errors"]) for it in res["iterations"]]
+    best_rec = res["iterations"][res["best_iter"] - 1]["gate_result"]
+    invented = [e for e in best_rec["errors"] if "[발명]" in e]
+    regressed = [it["iter"] for it in res["iterations"] if it["rejected"]]
+    print(f"  best iter={res['best_iter']} final_status={res['final_status']} final_errors={res['final_errors']} | iter별 ERROR={iter_errs}")
+    print(f"  converged={res['converged']} reason={res['reason']} 회귀기각iter={regressed} | history 저장:", hist_path.exists())
     assert res["reason"] in ("error_cleared", "warn_exhausted", "max_iter", "no_progress", "max_calls"), "종료 사유 미기록(무한루프 위험)"
-    assert not invented, "발명 발생(입력 근거 위반)"
+    assert res["final_errors"] == min(iter_errs), "반환 best가 ERROR 최소가 아님"
+    assert not invented, "best에 발명 발생(입력 근거 위반)"
     lines = hist_path.read_text(encoding="utf-8").strip().splitlines()
-    assert len(lines) == len(res["iterations"]), "history 전량 저장 실패"
-    print(" ", PASS, "(실측: 경계종료·발명0·history 전량. real 비결정으로 converged 변동 가능)")
+    assert len(lines) == len(res["iterations"]), "history 전량 저장 실패(기각 iter 포함)"
+    print(" ", PASS, "(실측: best-so-far 반환·ERROR최소·회귀 기각본 history 보존·발명0)")
 
     # ----- frontend·mobile 실측 (계약 형상 일관 입력, 동형 Runtime) -----
     import frontend as frontend_agent
@@ -174,13 +237,15 @@ if os.environ.get("RUNTIME_REAL") == "on":
                 print("        ERROR:", gr["errors"][:2])
             if it["diff"]:
                 print("        diff:", it["diff"])
-        fin = res["iterations"][-1]["gate_result"]
-        invented = [e for e in fin["errors"] if "[발명]" in e]
+        iter_errs = [len(it["gate_result"]["errors"]) for it in res["iterations"]]
+        best_rec = res["iterations"][res["best_iter"] - 1]["gate_result"]
+        invented = [e for e in best_rec["errors"] if "[발명]" in e]
         lines = hist_path.read_text(encoding="utf-8").strip().splitlines() if hist_path.exists() else []
         assert res["reason"] in ("error_cleared", "warn_exhausted", "max_iter", "no_progress", "max_calls"), f"{label} 종료 사유 미기록"
+        assert res["final_errors"] == min(iter_errs), f"{label} 반환 best가 ERROR 최소 아님"
         assert not invented, f"{label} 발명 발생"
         assert len(lines) == len(res["iterations"]), f"{label} history 전량 저장 실패"
-        print(f"    {PASS} ({label}: 경계종료·발명0·history {len(lines)}건, converged={res['converged']})")
+        print(f"    {PASS} ({label}: best iter={res['best_iter']} status={res['final_status']} history {len(lines)}건, converged={res['converged']})")
 
     def _ep2(eid, method, path, feat, succ, err):
         return {"endpoint_id": eid, "method": method, "path": path, "feature_ref": feat, "security_ref": "ctrl",
