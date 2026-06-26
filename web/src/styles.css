@@ -1,5 +1,5 @@
 /* ROHA 디자인 시스템 (DESIGN_SYSTEM_SPEC.md / design-demo.html 기준).
-   테마: data-theme=indigo|red (brand) × data-mode=dark (모드). 모든 색은 토큰만. 하드코딩 금지. */
+   테마: data-theme=indigo|coral (brand) × data-mode=dark (모드). 모든 색은 토큰만. 하드코딩 금지. */
 :root {
   /* surface 5단계 (엔진 산출) */
   --surf-l-0:#FFFFFF; --surf-l-1:#F5F5F5; --surf-l-2:#F0EFF0; --surf-l-3:#EBEAEB; --surf-l-4:#E6E5E6;
@@ -15,6 +15,8 @@
   --success:var(--success-l); --warning:var(--warning-l); --danger:var(--danger-l);
   /* neutral(주요 액션 대비용) + danger-soft(강조 위험) */
   --neutral:#292929; --on-neutral:#FFFFFF; --danger-soft-bg:#FFF0F0; --danger-soft-fg:#AB0909;
+  /* 의미색 솔리드 배지 텍스트(라이트=흰, 다크=어둠 — 다크 의미색이 밝아 대비 보존) + 체크/노브(밝은 checked 위 항상 흰) */
+  --on-semantic:#FFFFFF; --on-checked:#FFFFFF;
   /* brand 기본값(인디고 라이트) — 초기 스크립트가 data-theme 설정 전 안전망 */
   --primary:#354497; --on-primary:#FFFFFF; --primary-container:#D9DDF2; --on-primary-container:#0D1126;
   --tab-bg:#EDF9FF; --tab-fg:#1056BD; --menu-sel:#EEEEEE; --checked:#51C0FF;
@@ -28,7 +30,7 @@
   --tab-bg:#EDF9FF; --tab-fg:#1056BD; --menu-sel:#EEEEEE; --checked:#51C0FF;
   --neutral:#292929; --on-neutral:#FFFFFF;
 }
-[data-theme="red"] {
+[data-theme="coral"] {
   --primary:#CC0000; --on-primary:#FFFFFF; --primary-container:#FFCCCC; --on-primary-container:#330000;
   --tab-bg:#FFEFEF; --tab-fg:#FF5E5E; --menu-sel:#EEEEEE; --checked:#FF5E5E;
   --neutral:#292F45; --on-neutral:#FFFFFF;  /* 남색기 — 빨강 danger와 대비 강화 */
@@ -40,13 +42,14 @@
   --success:var(--success-d); --warning:var(--warning-d); --danger:var(--danger-d);
   --menu-sel:var(--surf-d-3);
   --neutral:#E6E5E6; --on-neutral:#1A191A; --danger-soft-bg:#3A1515; --danger-soft-fg:#F1A7A7;
+  --on-semantic:#1A191A;  /* 다크: 밝아진 의미색 위 어두운 텍스트(대비 보존) */
   color-scheme:dark;
 }
 [data-theme="indigo"][data-mode="dark"] {
   --primary:#B3BBE5; --on-primary:#1A224C; --primary-container:#283371; --on-primary-container:#D9DDF2;
   --tab-bg:#0D1F35; --tab-fg:#5BA3D4; --checked:#51C0FF;
 }
-[data-theme="red"][data-mode="dark"] {
+[data-theme="coral"][data-mode="dark"] {
   --primary:#FF9999; --on-primary:#660000; --primary-container:#990000; --on-primary-container:#FFCCCC;
   --tab-bg:#2D1515; --tab-fg:#FF5E5E; --checked:#FF5E5E;
 }
@@ -132,7 +135,7 @@ input:focus, textarea:focus, select:focus { border-color:var(--primary); }
 .cb { width:18px; height:18px; border-radius:5px; border:1.5px solid var(--text-3); flex:none;
   display:flex; align-items:center; justify-content:center; }
 .cb.on { background:var(--checked); border-color:var(--checked); }
-.cb .ico { width:12px; height:12px; stroke:#fff; stroke-width:3; }
+.cb .ico { width:12px; height:12px; stroke:var(--on-checked); stroke-width:3; }
 .cb-name { font-size:13px; font-weight:600; }
 .cb-desc { font-size:12px; color:var(--text-2); }
 
@@ -145,7 +148,7 @@ button { font-family:var(--font); cursor:pointer; }
 .btn-primary, .btn-neutral, .btn-tonal, .btn-text, .btn-danger-soft { vertical-align:middle; }
 .btn-primary .ico, .btn-neutral .ico, .btn-tonal .ico, .btn-text .ico, .rowbtn .ico { width:15px; height:15px; }
 .btn-primary { background:var(--primary); color:var(--on-primary); }
-[data-theme="red"] .btn-primary { background:var(--neutral); color:var(--on-neutral); }  /* 코랄: 주요 액션 neutral로 삭제와 대비 */
+[data-theme="coral"] .btn-primary { background:var(--neutral); color:var(--on-neutral); }  /* 코랄: 주요 액션 neutral로 삭제와 대비 */
 .btn-primary:hover:not(:disabled) { filter:brightness(1.08); }
 .btn-neutral { background:var(--neutral); color:var(--on-neutral); }
 .btn-neutral:hover:not(:disabled) { filter:brightness(1.12); }
@@ -164,9 +167,9 @@ button:disabled { opacity:.5; cursor:default; }
 .b-explicit, .b-fact { background:var(--primary-container); color:var(--on-primary-container); }
 .b-context { background:var(--raised); color:var(--warning); }
 .b-proposed { background:transparent; border:1px solid var(--primary); color:var(--primary); }
-.gate { font-size:11.5px; font-weight:600; padding:4px 12px; border-radius:999px; margin-left:6px; color:#fff; }
+.gate { font-size:11.5px; font-weight:600; padding:4px 12px; border-radius:999px; margin-left:6px; color:var(--on-semantic); }
 .g-PASS { background:var(--success); } .g-WARN { background:var(--warning); } .g-FAIL { background:var(--danger); }
-.chip-done { font-size:11.5px; font-weight:600; padding:4px 12px; border-radius:999px; background:var(--success); color:#fff; }
+.chip-done { font-size:11.5px; font-weight:600; padding:4px 12px; border-radius:999px; background:var(--success); color:var(--on-semantic); }
 
 /* 항목 블록(discovery·structured) */
 .item { padding:13px 16px; border-radius:var(--r-md); background:var(--bg); border:.5px solid var(--line); margin-bottom:8px; }

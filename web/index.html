@@ -7,16 +7,20 @@
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.css" />
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap" />
     <script>
-      // 테마는 인디고 고정. 모드(라이트/다크)만 저장값 우선·없으면 OS(깜빡임 방지).
+      // 2축: 테마(indigo|coral) + 모드(light|dark). 저장값 우선·없으면 기본/OS(깜빡임 방지).
       (function () {
-        document.documentElement.setAttribute("data-theme", "indigo");
         try {
+          var theme = localStorage.getItem("roha-theme");
+          if (theme !== "indigo" && theme !== "coral") theme = "indigo";
+          document.documentElement.setAttribute("data-theme", theme);
           var mode = localStorage.getItem("roha-mode");
           if (mode !== "light" && mode !== "dark") {
             mode = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
           }
           if (mode === "dark") document.documentElement.setAttribute("data-mode", "dark");
-        } catch (e) { /* noop */ }
+        } catch (e) {
+          document.documentElement.setAttribute("data-theme", "indigo");
+        }
       })();
     </script>
   </head>
