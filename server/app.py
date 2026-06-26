@@ -116,19 +116,20 @@ def list_projects(tab: str = "active", sort: str = "recent", page: int = 1, page
         cur.execute(
             f"SELECT p.public_key, p.business_key, p.created_at, coalesce(lc.status,'active') AS status, "
             f"(SELECT count(*) FROM records r WHERE r.project_pk = p.pk AND r.status = 'confirmed') AS confirmed_n, "
+            f"EXISTS(SELECT 1 FROM records r3 WHERE r3.project_pk = p.pk AND r3.status = 'in_review') AS has_review, "
             f"rv.body {base_from} WHERE {wsql} ORDER BY {order} LIMIT %s OFFSET %s",
             args + [page_size, offset])
         rows = cur.fetchall()
         cur.execute(f"SELECT count(*) {base_from} WHERE {wsql}", args)
         total = cur.fetchone()[0]
     out = []
-    for public_key, business_key, created_at, status, confirmed_n, body in rows:
+    for public_key, business_key, created_at, status, confirmed_n, has_review, body in rows:
         title = None
         if isinstance(body, dict):
             title = body.get("site_character") or (body.get("goal") or {}).get("statement")
         # business_key = 화면에 노출되는 사람용 ID, public_key = API·URL 호출용(경로 전송).
         out.append({"public_key": public_key, "business_key": business_key,
-                    "created_at": str(created_at), "status": status,
+                    "created_at": str(created_at), "status": status, "has_review": bool(has_review),
                     "progress": {"confirmed": confirmed_n, "total": TOTAL_STEPS},
                     "title": title or "(제목 없음)"})
     return {"projects": out, "page": page, "page_size": page_size, "total": total,
@@ -152,6 +153,13 @@ def _set_lifecycle(public_key, **fields):
 def complete_project(public_key: str):
     _set_lifecycle(public_key, status="done")
     return {"public_key": public_key, "status": "done"}
+
+
+@app.post("/projects/{public_key}/pause")
+def pause_project(public_key: str):
+    # 중단: 진행 중 일시정지(대금 미지급·계약 불이행 등). 상태만 paused로 저장, 산출은 보존. 재개=reopen(active).
+    _set_lifecycle(public_key, status="paused")
+    return {"public_key": public_key, "status": "paused"}
 
 
 @app.post("/projects/{public_key}/reopen")
@@ -234,9 +242,10 @@ def status(public_key: str):
         nodes.append({"node": rt, "status": h["status"] if h else None,
                       "version": h["current_version"] if h else None})
     with _conn() as c, c.cursor() as cur:
-        cur.execute("SELECT business_key FROM projects WHERE pk = %s", (pk,))
-        business_key = cur.fetchone()[0]
-    return {"public_key": public_key, "business_key": business_key,
+        cur.execute("SELECT p.business_key, coalesce(lc.status,'active') FROM projects p "
+                    "LEFT JOIN project_lifecycle lc ON lc.project_pk = p.pk WHERE p.pk = %s", (pk,))
+        business_key, lifecycle = cur.fetchone()
+    return {"public_key": public_key, "business_key": business_key, "lifecycle": lifecycle,
             "nodes": nodes, "awaiting_approval": _awaiting(store)}
 
 

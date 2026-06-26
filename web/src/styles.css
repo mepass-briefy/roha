@@ -304,15 +304,19 @@ ul.oq { margin:8px 0 0; padding-left:18px; } ul.oq li { font-size:13px; color:va
 .pc-badge.st-active { background:var(--primary-container); color:var(--on-primary-container); }
 .pc-badge.st-reg { background:var(--raised); color:var(--text-2); }
 .pc-badge.st-done { background:var(--success); color:var(--on-semantic); }
+.pc-badge.st-review { background:var(--warning); color:var(--on-semantic); }
+.pc-badge.st-paused { background:var(--danger-soft-bg); color:var(--danger-soft-fg); }
+.notice-paused { color:var(--danger-soft-fg); }
 .pc-name { display:flex; align-items:center; gap:8px; }
 .pc-name .ico { width:16px; height:16px; color:var(--text-3); }
 
 /* 파이프라인 원형 태그 */
-.pc-pipe { display:flex; flex-wrap:wrap; gap:5px; }
-.pipe-dot { width:24px; height:24px; border-radius:50%; font-size:9px; font-weight:600; flex:none;
-  display:flex; align-items:center; justify-content:center; letter-spacing:.02em; }
+.pc-pipe { display:flex; padding-left:3px; }
+.pipe-dot { width:26px; height:26px; border-radius:50%; font-size:9px; font-weight:600; flex:none;
+  display:flex; align-items:center; justify-content:center; letter-spacing:.02em; margin-left:-7px; border:2px solid var(--card); }
 .pipe-dot.done { background:var(--primary); color:var(--on-primary); }
-.pipe-dot.pend { background:transparent; border:1px solid var(--line-strong); color:var(--text-3); }
+.pipe-dot.pend { background:var(--raised); color:var(--text-3); }
+.pipe-dot:hover { transform:translateY(-2px); transition:transform .1s; z-index:1; }
 
 /* 상태 세그먼트(전체/진행중/완료/등록) — .seg 재사용, 가로 자동폭 */
 .seg-status { flex:none; }

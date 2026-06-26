@@ -25,6 +25,7 @@ export const api = {
   editDiscovery: (pk, body) => j("PUT", `/projects/${enc(pk)}/records/discovery`, { body }),
   approve: (pk) => j("POST", `/projects/${enc(pk)}/approve`),
   complete: (pk) => j("POST", `/projects/${enc(pk)}/complete`),
+  pause: (pk) => j("POST", `/projects/${enc(pk)}/pause`),
   reopen: (pk) => j("POST", `/projects/${enc(pk)}/reopen`),
   remove: (pk) => j("DELETE", `/projects/${enc(pk)}`),
 };

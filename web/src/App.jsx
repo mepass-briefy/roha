@@ -30,12 +30,15 @@ const PIPELINE = [
   { key: "backend", code: "BE", label: "백엔드" }, { key: "frontend", code: "FE", label: "프론트엔드" },
   { key: "mobile", code: "MB", label: "모바일" },
 ];
-// 상태 파생: 완료(done) / 등록(생성만, 거의 미진행) / 진행중(active & 진행). 저장 상태(active|done)+진행도에서.
+// 상태 파생(5종): 중단(paused) / 완료(done) / 검토(in_review 대기) / 등록(디스커버리 임시저장=intake만 확정) / 진행중(그 외 active).
 function deriveStatus(p) {
+  if (p.status === "paused") return "중단";
   if (p.status === "done") return "완료";
+  if (p.has_review) return "검토";
   return (p.progress.confirmed || 0) <= 1 ? "등록" : "진행중";
 }
-const STATUS_RANK = { "진행중": 0, "등록": 1, "완료": 2 };
+const STATUS_RANK = { "진행중": 0, "검토": 1, "등록": 2, "중단": 3, "완료": 4 };
+const STATUS_CLS = { "진행중": "active", "검토": "review", "등록": "reg", "중단": "paused", "완료": "done" };
 
 // 디바이스(복수 선택). 웹=PC 브라우저, 모바일웹=모바일 브라우저, 모바일=모바일 앱.
 const DEVICES = [
@@ -275,11 +278,12 @@ function PipelineTags({ confirmed }) {
 }
 
 async function fetchAllProjects() {
-  const [a, d] = await Promise.all([
+  const [a, d, ps] = await Promise.all([
     api.listProjects({ tab: "active", page: 1, page_size: 100 }),
     api.listProjects({ tab: "done", page: 1, page_size: 100 }),
+    api.listProjects({ tab: "paused", page: 1, page_size: 100 }),
   ]);
-  return [...(a.projects || []), ...(d.projects || [])];
+  return [...(a.projects || []), ...(d.projects || []), ...(ps.projects || [])];
 }
 
 function ProjectList({ onOpen, onNew }) {
@@ -329,7 +333,7 @@ function ProjectList({ onOpen, onNew }) {
           <input type="search" placeholder="프로젝트, 저장소, 에이전트 검색…" value={q} onChange={(e) => setQ(e.target.value)} />
         </div>
         <div className="seg seg-status">
-          {[["all", "전체"], ["진행중", "진행중"], ["완료", "완료"], ["등록", "등록"]].map(([v, l]) => (
+          {[["all", "전체"], ["진행중", "진행중"], ["검토", "검토"], ["등록", "등록"], ["완료", "완료"], ["중단", "중단"]].map(([v, l]) => (
             <button key={v} className={status === v ? "on" : ""} onClick={() => setStatus(v)}>{l}</button>
           ))}
         </div>
@@ -360,14 +364,14 @@ function ProjectList({ onOpen, onNew }) {
                 <div className="proj-card" key={p.public_key} onClick={() => onOpen(p.public_key)} role="button" tabIndex={0}>
                   <div className="pc-top">
                     <div className="pc-name"><IconFolder />{p.title}</div>
-                    <span className={`pc-badge st-${st === "완료" ? "done" : st === "등록" ? "reg" : "active"}`}>{st}</span>
+                    <span className={`pc-badge st-${STATUS_CLS[st] || "active"}`}>{st}</span>
                   </div>
                   <div className="pc-key">{p.business_key} · {fmtDate(p.created_at)}</div>
                   <div className="pc-bar"><span className="pc-bar-fill" style={{ width: pct + "%" }} /></div>
                   <PipelineTags confirmed={p.progress.confirmed} />
                   <div className="pc-foot">
                     <div className="pc-actions" onClick={(e) => e.stopPropagation()}>
-                      {p.status === "done"
+                      {(p.status === "done" || p.status === "paused")
                         ? <button className="btn-text rowbtn" onClick={() => act(() => api.reopen(p.public_key))}>재개</button>
                         : <button className="btn-text rowbtn" onClick={() => act(() => api.complete(p.public_key))}>완료</button>}
                       <button className="rowbtn del" onClick={() => { if (confirm("이 프로젝트를 삭제(숨김)할까요?")) act(() => api.remove(p.public_key)); }}><IconTrash />삭제</button>
@@ -464,6 +468,9 @@ export default function App() {
   });
   const runStep = () => withBusy(async () => { const res = await api.run(pk); setLastRun(res); await refresh(pk); if (res.ran) setNode(res.ran); });
   const approve = () => withBusy(async () => { await api.approve(pk); setLastRun(null); await refresh(pk); });
+  // 중단: 진행 중 일시정지(대금 미지급·계약 불이행 등). 상태 저장, 재개 가능(=활성).
+  const pauseProject = () => withBusy(async () => { await api.pause(pk); await refresh(pk); });
+  const resumeProject = () => withBusy(async () => { await api.reopen(pk); await refresh(pk); });
 
   const awaiting = statusData?.awaiting_approval || [];
   const recByType = Object.fromEntries(records.map((r) => [r.type, r]));
@@ -518,10 +525,14 @@ export default function App() {
         {view === "node" && (
           <>
             <div className="actionbar">
-              {awaiting.length > 0
-                ? <button className="btn-primary" disabled={busy} onClick={approve}>{busy ? "처리 중…" : `확정 (${awaiting.map((a) => NODE_LABELS[a] || a).join(", ")})`}</button>
-                : <button className="btn-primary" disabled={busy} onClick={runStep}>{busy ? "실행 중…" : "다음 단계 실행"}</button>}
+              {statusData?.lifecycle === "paused"
+                ? <button className="btn-primary" disabled={busy} onClick={resumeProject}>{busy ? "처리 중…" : "▶ 재개"}</button>
+                : awaiting.length > 0
+                  ? <button className="btn-primary" disabled={busy} onClick={approve}>{busy ? "처리 중…" : `확정 (${awaiting.map((a) => NODE_LABELS[a] || a).join(", ")})`}</button>
+                  : <button className="btn-primary" disabled={busy} onClick={runStep}>{busy ? "실행 중…" : "다음 단계 실행"}</button>}
               <button className="btn-text" disabled={busy} onClick={() => withBusy(() => refresh(pk))} title="저장된 최신 상태로 화면을 다시 맞춥니다(재조회). 에이전트를 다시 돌리지 않습니다.">재정리</button>
+              {statusData?.lifecycle !== "paused" && statusData?.lifecycle !== "done" &&
+                <button className="rowbtn del" disabled={busy} onClick={() => { if (confirm("진행을 중단(일시정지)할까요? 현재 상태는 저장되며 나중에 재개할 수 있습니다.")) pauseProject(); }} title="대금 미지급·계약 불이행 등으로 진행을 일시정지합니다. 재개 가능.">⏸ 중단</button>}
               <button className="btn-text" onClick={() => setView("list")}>← 프로젝트</button>
               {lastRun?.gate && <span className="muted">게이트 <span className={`gate g-${lastRun.gate.test}`}>test {lastRun.gate.test}</span><span className={`gate g-${lastRun.gate.review}`}>review {lastRun.gate.review}</span></span>}
             </div>
@@ -533,6 +544,7 @@ export default function App() {
                 </button>
               ))}
             </div>
+            {statusData?.lifecycle === "paused" && <div className="card"><div className="notice notice-paused">⏸ 중단됨 — 진행이 일시정지된 상태입니다(대금 미지급·계약 불이행 등). "재개"를 누르면 다시 진행합니다.</div></div>}
             {awaiting.length > 0 && <div className="card"><div className="notice">사람 검토 대기: 아래 산출을 확인하고 "확정"하세요.</div></div>}
             {error && <div className="card"><div className="err">{error}</div></div>}
             <div className="card">
