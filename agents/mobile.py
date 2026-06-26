@@ -41,7 +41,9 @@ REAL_MODE_INSTRUCTION = (
     "3. 토큰만(하드코딩 색 금지): 색·간격·radius는 uses_tokens(design_system 토큰명)로만 참조한다. hex 색을 직접 쓰지 않는다.\n"
     "4. 외부 식별자: data_calls.path_params는 문자열 배열(예: [\"public_key\"])로만, public_key만(내부 id/_id/pk/_pk 금지). 객체 금지.\n"
     "5. navigation: 화면이 2개 이상일 때만. 넣으려면 target_screen_ref를 wireframe 내 실제 화면명으로 반드시 채운다(null·누락 금지). "
-    "단일 화면(screens 1개)이면 모든 navigation은 null. 다중이면 pattern은 bottom-tab.\n"
+    "단일 화면(screens 1개)이면 모든 navigation은 null. pattern은 wireframe.navigation.pattern을 모바일 패러다임으로 해석한다"
+    "(left-sidebar/sidebar→drawer, tabs/top-tabs→bottom-tab). wireframe에 패턴이 없으면 화면 수 기반 모바일 표준(≤5 bottom-tab, 그 외 drawer). "
+    "근거 없이 네비를 추가하지 말고, 해석 출처를 source_pattern(wireframe.navigation.pattern 값, 없으면 null)으로 남긴다.\n"
     "6. 모바일 고유 요소는 design_system 근거 있을 때만: touch_target은 design_system.accessibility.min_touch_target 근거 있을 때만, "
     "dark_mode는 design_system 다크 토큰(mode==dark) 있을 때만, safe_area는 design_system/wireframe 근거 있을 때만. 근거 없으면 null + open_questions(임의 값 발명 금지).\n"
     "7. 근거 없는 loading/empty 상태는 만들지 말고 open_questions로(API 사용 화면 대상).\n"
@@ -65,7 +67,7 @@ CONTRACT_RULES = """## 계약 규칙(주입)
 1. screen_ref∈wireframe, endpoint_ref∈backend, component_ref∈palette, uses_tokens∈design token만(발명 금지).
 2. backend 응답 구조(success/data, error/code) 그대로 처리. 외부 식별자는 public_key만(내부 PK 금지).
 3. outcome_mapping code는 backend success/error code만. 도메인 특수 case는 open_questions.
-4. 단일 화면이면 navigation null. 다중이면 bottom-tab + target_screen_ref(wireframe 내).
+4. 단일 화면이면 navigation null. 다중이면 wireframe.navigation.pattern을 모바일 패러다임으로 해석(sidebar→drawer, tabs→bottom-tab) + target_screen_ref(wireframe 내).
 5. 입력 부족 미구현은 open_questions 또는 explicit_not_implemented(Silent Omission 금지).
 6. 모바일 요소(터치타겟/다크모드/safe area)는 design_system 근거 있을 때만. 없으면 open_questions.
 """
@@ -78,6 +80,22 @@ _FEAT_RE = re.compile(r"기능 '([^']+)'")
 _SEM_RE = re.compile(r"의미색 '([^']+)'")
 
 INTERACTIVE = ("button", "input", "nav")
+
+# wireframe 네비 패턴 -> 모바일 패러다임 해석(입력 근거 내). 키는 wireframe.navigation.pattern 값(소문자).
+NAV_PARADIGM = {
+    "bottom-tab": "bottom-tab", "tabs": "bottom-tab", "top-tabs": "bottom-tab", "tab": "bottom-tab",
+    "left-sidebar": "drawer", "sidebar": "drawer", "drawer": "drawer", "rail": "drawer",
+}
+
+
+def _mobile_nav_pattern(wf_pattern, n_screens):
+    """wireframe가 선언한 네비 패턴을 모바일 패러다임으로 해석한다(발명 아님: 패턴 자체가 wireframe 입력).
+    wireframe에 패턴이 없거나 미지원이면 화면 수 기반 모바일 표준 기본(<=5 bottom-tab, 그 외 drawer)."""
+    if wf_pattern:
+        m = NAV_PARADIGM.get(str(wf_pattern).strip().lower())
+        if m:
+            return m
+    return "bottom-tab" if n_screens <= 5 else "drawer"
 
 
 def _propagate_open_questions(wireframe, design_system, backend, screens):
@@ -298,6 +316,7 @@ def offline_llm(prompt) -> str:
     touch_min = acc.get("min_touch_target")
     dark_tokens = {c["token"] for c in ds.get("color_tokens", []) if c.get("mode") == "dark"}
     safe_inset = acc.get("safe_area") or acc.get("safe_area_inset")
+    wf_nav_pattern = (wf.get("navigation", {}) or {}).get("pattern")  # 네비 패러다임 해석의 wireframe 근거
     multi = len(screen_names) > 1
 
     screens = []
@@ -372,10 +391,11 @@ def offline_llm(prompt) -> str:
         else:
             open_questions.append(f"화면 '{sref}': safe-area 근거가 design_system/wireframe에 없음 -> 미적용(검토 필요)")
 
-        # Navigation: 단일 화면이면 미적용(null), 다중이면 bottom-tab
+        # Navigation: 단일 화면이면 미적용(null). 다중이면 wireframe.navigation.pattern을 모바일 패러다임으로 해석.
         navigation = None
         if multi:
-            navigation = {"pattern": "bottom-tab",
+            navigation = {"pattern": _mobile_nav_pattern(wf_nav_pattern, len(screen_names)),
+                          "source_pattern": wf_nav_pattern,  # 해석 출처(wireframe 근거). None이면 모바일 표준 기본.
                           "items": list(screen_names),
                           "target_screen_ref": next((n for n in screen_names if n != sref), None),
                           "uses_component": "nav" if "nav" in palette_set else None}
