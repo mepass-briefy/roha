@@ -288,3 +288,58 @@ ul.oq { margin:8px 0 0; padding-left:18px; } ul.oq li { font-size:13px; color:va
 .pc-pct { font-size:12px; color:var(--text-2); }
 .pc-pct b { font-size:14px; color:var(--text); font-weight:600; margin-left:2px; }
 @media (max-width:760px) { .proj-grid { grid-template-columns:1fr; } }
+
+/* ===== 아이콘 레일 사이드바 (Forge 와이어프레임: 앱 표시 없음, 폴더=홈·번개=에이전트·설정) ===== */
+.rail { width:60px; flex:none; background:var(--sidebar); border-right:.5px solid var(--line);
+  display:flex; flex-direction:column; align-items:center; justify-content:space-between; padding:18px 0;
+  position:sticky; top:0; height:100vh; }
+.rail-top, .rail-bottom { display:flex; flex-direction:column; gap:8px; align-items:center; }
+.rail-btn { width:40px; height:40px; border-radius:var(--r-md); border:none; background:transparent; color:var(--text-3);
+  display:flex; align-items:center; justify-content:center; cursor:pointer; }
+.rail-btn:hover { background:var(--raised); color:var(--text); }
+.rail-btn.active { background:var(--menu-sel); color:var(--primary); }
+.rail-btn .ico { width:20px; height:20px; }
+
+/* 카드 상태 배지(진행중/등록/완료) */
+.pc-badge.st-active { background:var(--primary-container); color:var(--on-primary-container); }
+.pc-badge.st-reg { background:var(--raised); color:var(--text-2); }
+.pc-badge.st-done { background:var(--success); color:var(--on-semantic); }
+.pc-name { display:flex; align-items:center; gap:8px; }
+.pc-name .ico { width:16px; height:16px; color:var(--text-3); }
+
+/* 파이프라인 원형 태그 */
+.pc-pipe { display:flex; flex-wrap:wrap; gap:5px; }
+.pipe-dot { width:24px; height:24px; border-radius:50%; font-size:9px; font-weight:600; flex:none;
+  display:flex; align-items:center; justify-content:center; letter-spacing:.02em; }
+.pipe-dot.done { background:var(--primary); color:var(--on-primary); }
+.pipe-dot.pend { background:transparent; border:1px solid var(--line-strong); color:var(--text-3); }
+
+/* 상태 세그먼트(전체/진행중/완료/등록) — .seg 재사용, 가로 자동폭 */
+.seg-status { flex:none; }
+.seg-status button { padding:6px 14px; white-space:nowrap; }
+
+/* 4열 반응형 카드 그리드(최대 4) */
+.proj-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(240px, 1fr)); gap:16px; }
+
+/* 에이전트 현황 */
+.agent-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(260px, 1fr)); gap:16px; }
+.agent-card { background:var(--card); border:.5px solid var(--line); border-radius:var(--r-lg); padding:16px 18px;
+  display:flex; flex-direction:column; gap:9px; }
+.ag-top { display:flex; align-items:center; gap:9px; }
+.ag-name { font-size:14px; font-weight:600; }
+.ag-cur { font-size:13px; }
+.ag-proj { color:var(--primary); cursor:pointer; font-weight:500; }
+.ag-tags { display:flex; gap:6px; }
+.ag-tag { font-size:11px; font-weight:500; padding:2px 9px; border-radius:999px; background:var(--raised); color:var(--text-2); }
+.ag-meta { font-size:12px; color:var(--text-2); }
+
+/* 디테일 단계 네비(본문 가로 스트립) */
+.stage-nav { display:flex; flex-wrap:wrap; gap:6px; margin:0 0 16px; }
+.stage-pill { display:flex; align-items:center; gap:6px; padding:6px 11px; border-radius:999px; cursor:pointer;
+  border:.5px solid var(--line); background:var(--card); color:var(--text-2); font-family:inherit; font-size:12.5px; }
+.stage-pill:hover { background:var(--raised); }
+.stage-pill.active { background:var(--menu-sel); color:var(--text); font-weight:600; border-color:transparent; }
+.stage-pill .num { font-size:10px; color:var(--text-3); }
+.stage-pill .dot { width:7px; height:7px; border-radius:50%; background:var(--text-3); opacity:.5; }
+.stage-pill .dot.confirmed { background:var(--active); opacity:1; }
+.stage-pill .dot.in_review { background:var(--warning); opacity:1; }

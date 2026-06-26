@@ -14,6 +14,28 @@ const IconTrash = () => (
 const IconCheck = () => (
   <svg className="ico" viewBox="0 0 24 24"><path d="M5 12l5 5L20 6" /></svg>
 );
+const IconBolt = () => (
+  <svg className="ico" viewBox="0 0 24 24"><path d="M13 3L4 14h7l-1 7 9-11h-7l1-7z" /></svg>
+);
+const IconGear = () => (
+  <svg className="ico" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" /></svg>
+);
+
+// 파이프라인 단계(v16 워크플로 순서). 카드의 원형 태그·에이전트 뷰의 기준. 순차 실행이라 confirmed N = 앞 N단계 완료.
+const PIPELINE = [
+  { key: "intake", code: "IN", label: "입력" }, { key: "discovery", code: "DV", label: "Discovery" },
+  { key: "strategy", code: "ST", label: "전략" }, { key: "ux", code: "UX", label: "UX" },
+  { key: "security", code: "SC", label: "보안" }, { key: "design_system", code: "DS", label: "디자인" },
+  { key: "features", code: "FT", label: "기능" }, { key: "wireframe", code: "WF", label: "와이어프레임" },
+  { key: "backend", code: "BE", label: "백엔드" }, { key: "frontend", code: "FE", label: "프론트엔드" },
+  { key: "mobile", code: "MB", label: "모바일" },
+];
+// 상태 파생: 완료(done) / 등록(생성만, 거의 미진행) / 진행중(active & 진행). 저장 상태(active|done)+진행도에서.
+function deriveStatus(p) {
+  if (p.status === "done") return "완료";
+  return (p.progress.confirmed || 0) <= 1 ? "등록" : "진행중";
+}
+const STATUS_RANK = { "진행중": 0, "등록": 1, "완료": 2 };
 
 // 디바이스(복수 선택). 웹=PC 브라우저, 모바일웹=모바일 브라우저, 모바일=모바일 앱.
 const DEVICES = [
@@ -242,36 +264,61 @@ function RecordBody({ rec, pk, onSaved }) {
   return <StructuredView body={rec.body} />;
 }
 
-function ProjectList({ onOpen, tab, onNew }) {
-  // tab(active|done)은 사이드바 2depth 메뉴가 제어. 와이어프레임: 표 아님, 2열 카드 그리드 + 검색 + 새 프로젝트.
+function PipelineTags({ confirmed }) {
+  return (
+    <div className="pc-pipe">
+      {PIPELINE.map((s, i) => (
+        <span key={s.key} className={`pipe-dot ${i < confirmed ? "done" : "pend"}`} title={s.label}>{s.code}</span>
+      ))}
+    </div>
+  );
+}
+
+async function fetchAllProjects() {
+  const [a, d] = await Promise.all([
+    api.listProjects({ tab: "active", page: 1, page_size: 100 }),
+    api.listProjects({ tab: "done", page: 1, page_size: 100 }),
+  ]);
+  return [...(a.projects || []), ...(d.projects || [])];
+}
+
+function ProjectList({ onOpen, onNew }) {
+  // 홈. 표 아님 — 최대 4열 반응형 카드 그리드, 12개/페이지. 상태(전체/진행중/완료/등록)·검색·기간·정렬은 클라이언트(active+done 병합).
+  const [status, setStatus] = useState("all");
   const [sort, setSort] = useState("recent");
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [q, setQ] = useState("");
   const [page, setPage] = useState(1);
-  const [data, setData] = useState({ projects: [], total: 0, page: 1, page_size: 20 });
+  const [all, setAll] = useState([]);
   const [busy, setBusy] = useState(false);
+  const PAGE = 12;
 
-  async function load() {
-    setBusy(true);
-    try {
-      const d = await api.listProjects({ tab, sort, page, date_from: from || undefined, date_to: to || undefined });
-      setData(d);
-    } finally { setBusy(false); }
-  }
-  useEffect(() => { load(); /* eslint-disable-next-line */ }, [tab, sort, from, to, page]);
-  useEffect(() => { setPage(1); /* eslint-disable-next-line */ }, [tab, sort, from, to]);
-
+  async function load() { setBusy(true); try { setAll(await fetchAllProjects()); } finally { setBusy(false); } }
+  useEffect(() => { load(); }, []);
+  useEffect(() => { setPage(1); }, [status, sort, from, to, q]);
   const act = async (fn) => { await fn(); await load(); };
-  const pages = Math.max(1, Math.ceil(data.total / data.page_size));
-  const shown = data.projects.filter((p) => !q || (p.title + " " + p.business_key).toLowerCase().includes(q.toLowerCase()));
+
+  let rows = all.map((p) => ({ ...p, _st: deriveStatus(p) }));
+  if (status !== "all") rows = rows.filter((p) => p._st === status);
+  if (q) { const t = q.toLowerCase(); rows = rows.filter((p) => (p.title + " " + p.business_key).toLowerCase().includes(t)); }
+  if (from) rows = rows.filter((p) => (p.created_at || "").slice(0, 10) >= from);
+  if (to) rows = rows.filter((p) => (p.created_at || "").slice(0, 10) <= to);
+  rows.sort((a, b) => {
+    if (status === "all") { const r = STATUS_RANK[a._st] - STATUS_RANK[b._st]; if (r) return r; }  // 전체: 진행중>등록>완료 우선
+    if (sort === "incomplete") { const d = a.progress.confirmed / a.progress.total - b.progress.confirmed / b.progress.total; if (d) return d; }
+    return a.created_at < b.created_at ? 1 : -1;  // 최신순
+  });
+  const total = rows.length;
+  const pages = Math.max(1, Math.ceil(total / PAGE));
+  const pageRows = rows.slice((page - 1) * PAGE, page * PAGE);
 
   return (
     <div className="proj-page">
       <div className="list-head">
         <div>
-          <h2 className="list-title">{tab === "done" ? "완료" : "프로젝트"}</h2>
-          <div className="list-sub">{tab === "done" ? "완료된 프로젝트 보관함입니다." : `총 ${data.total}개 워크스페이스 · 진행 중인 작업을 이어서 진행하세요`}</div>
+          <h2 className="list-title">프로젝트</h2>
+          <div className="list-sub">총 {all.length}개 워크스페이스 · 진행 중인 작업을 이어서 진행하세요</div>
         </div>
         <button className="btn-primary new-proj" onClick={onNew}><IconPlus />새 프로젝트</button>
       </div>
@@ -279,37 +326,45 @@ function ProjectList({ onOpen, tab, onNew }) {
       <div className="search-row">
         <div className="search-box">
           <svg className="ico" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7" /><path d="M21 21l-4-4" /></svg>
-          <input type="search" placeholder="프로젝트·repo·에이전트 검색…" value={q} onChange={(e) => setQ(e.target.value)} />
+          <input type="search" placeholder="프로젝트, 저장소, 에이전트 검색…" value={q} onChange={(e) => setQ(e.target.value)} />
         </div>
-        <select className="seg-sel" value={sort} onChange={(e) => setSort(e.target.value)}>
-          <option value="recent">최근순</option>
-          <option value="incomplete">미완성순</option>
-        </select>
+        <div className="seg seg-status">
+          {[["all", "전체"], ["진행중", "진행중"], ["완료", "완료"], ["등록", "등록"]].map(([v, l]) => (
+            <button key={v} className={status === v ? "on" : ""} onClick={() => setStatus(v)}>{l}</button>
+          ))}
+        </div>
       </div>
 
       <div className="filter-row">
+        <span className="muted">정렬</span>
+        <select className="seg-sel" value={sort} onChange={(e) => setSort(e.target.value)}>
+          <option value="recent">최신순</option>
+          <option value="incomplete">미완성순</option>
+        </select>
         <span className="muted">기간</span>
         <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
         <span className="muted">~</span>
         <input type="date" value={to} onChange={(e) => setTo(e.target.value)} />
         {(from || to) && <button className="btn-text" onClick={() => { setFrom(""); setTo(""); }}>기간 해제</button>}
-        <span className="muted" style={{ marginLeft: "auto" }}>총 {data.total}건</span>
+        <span className="muted" style={{ marginLeft: "auto" }}>총 {total}건</span>
       </div>
 
-      {shown.length === 0
+      {pageRows.length === 0
         ? <div className="empty">{busy ? "불러오는 중…" : "프로젝트가 없습니다."}</div>
         : (
           <div className="proj-grid">
-            {shown.map((p) => {
+            {pageRows.map((p) => {
               const pct = Math.round((p.progress.confirmed / p.progress.total) * 100);
+              const st = p._st;
               return (
                 <div className="proj-card" key={p.public_key} onClick={() => onOpen(p.public_key)} role="button" tabIndex={0}>
                   <div className="pc-top">
-                    <div className="pc-name">{p.title}</div>
-                    <span className={`pc-badge ${p.status === "done" ? "is-done" : "is-active"}`}>{p.status === "done" ? "완료" : "진행중"}</span>
+                    <div className="pc-name"><IconFolder />{p.title}</div>
+                    <span className={`pc-badge st-${st === "완료" ? "done" : st === "등록" ? "reg" : "active"}`}>{st}</span>
                   </div>
-                  <div className="pc-key">{p.business_key}</div>
+                  <div className="pc-key">{p.business_key} · {fmtDate(p.created_at)}</div>
                   <div className="pc-bar"><span className="pc-bar-fill" style={{ width: pct + "%" }} /></div>
+                  <PipelineTags confirmed={p.progress.confirmed} />
                   <div className="pc-foot">
                     <div className="pc-actions" onClick={(e) => e.stopPropagation()}>
                       {p.status === "done"
@@ -317,7 +372,7 @@ function ProjectList({ onOpen, tab, onNew }) {
                         : <button className="btn-text rowbtn" onClick={() => act(() => api.complete(p.public_key))}>완료</button>}
                       <button className="rowbtn del" onClick={() => { if (confirm("이 프로젝트를 삭제(숨김)할까요?")) act(() => api.remove(p.public_key)); }}><IconTrash />삭제</button>
                     </div>
-                    <div className="pc-pct">{p.progress.confirmed}/{p.progress.total} <b>{pct}%</b></div>
+                    <div className="pc-pct"><b>{pct}%</b></div>
                   </div>
                 </div>
               );
@@ -334,8 +389,41 @@ function ProjectList({ onOpen, tab, onNew }) {
   );
 }
 
+// 에이전트(번개) 뷰: 전 프로젝트 단계 롤업(순차 파이프라인 기반, 발명 0). 단계 i 에이전트의 완료/큐/현재 프로젝트/진행%.
+function AgentsView({ onOpen }) {
+  const [all, setAll] = useState([]);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => { (async () => { setBusy(true); try { setAll(await fetchAllProjects()); } finally { setBusy(false); } })(); }, []);
+  const active = all.filter((p) => p.status !== "done");
+  const agents = PIPELINE.filter((s) => s.key !== "intake").map((s) => {
+    const i = PIPELINE.findIndex((x) => x.key === s.key);
+    const done = all.filter((p) => (p.progress.confirmed || 0) > i).length;        // 이 단계 완료
+    const queue = active.filter((p) => (p.progress.confirmed || 0) === i);          // 이 단계가 다음/현재
+    const cur = queue.slice().sort((a, b) => (a.created_at < b.created_at ? 1 : -1))[0] || null;
+    const curPct = cur ? Math.round((cur.progress.confirmed / cur.progress.total) * 100) : 0;
+    return { ...s, done, queue: queue.length, cur, curPct };
+  });
+  return (
+    <div className="proj-page">
+      <div className="list-head"><div><h2 className="list-title">에이전트</h2><div className="list-sub">전문 에이전트별 작업 현황{busy ? " · 불러오는 중…" : ""}</div></div></div>
+      <div className="agent-grid">
+        {agents.map((a) => (
+          <div className="agent-card" key={a.key}>
+            <div className="ag-top"><span className="pipe-dot done">{a.code}</span><div className="ag-name">{a.label} 에이전트</div></div>
+            <div className="ag-cur">{a.cur ? <span className="ag-proj" onClick={() => onOpen(a.cur.public_key)}>{a.cur.title}</span> : <span className="muted">현재 작업 없음</span>}</div>
+            {a.key === "backend" && a.cur && <div className="ag-tags"><span className="ag-tag">Python</span></div>}
+            <div className="ag-meta">큐 {a.queue}개 · 완료 {a.done}개</div>
+            <div className="pc-bar"><span className="pc-bar-fill" style={{ width: a.curPct + "%" }} /></div>
+            <div className="pc-pct"><b>{a.curPct}%</b></div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
-  const [view, setView] = useState("new");   // 홈=새 프로젝트 고정. list | new | node
+  const [view, setView] = useState("list");  // 홈=프로젝트 목록. list | agents | new | node
   const [listTab, setListTab] = useState("active");  // 프로젝트 2depth: active(진행 중) | done(완료/아카이브)
   const [pk, setPk] = useState(null);
   const [statusData, setStatusData] = useState(null);
@@ -384,47 +472,25 @@ export default function App() {
 
   return (
     <div className="layout">
-      <aside className="sidebar">
-        <div className="sb-top">
-          <div className="brand"><div className="mark">R</div><div className="nm">ROHA</div></div>
-          <div className="nav">
-            {/* 1) 홈 = 새 프로젝트(최상위) */}
-            <button className={`nav-btn ${view === "new" ? "active" : ""}`} onClick={() => { setView("new"); setPk(null); setNode(null); }}><IconPlus />새 프로젝트</button>
-            {/* 2) 프로젝트 — 2depth(진행 중 / 완료). 탭 아님, 메뉴로 분리. 진행 중에 초점, 완료는 아카이브. */}
-            <div className="nav-group">
-              <div className="nav-group-label"><IconFolder />프로젝트</div>
-              <button className={`nav-btn nav-sub ${view === "list" && listTab === "active" ? "active" : ""}`} onClick={() => { setListTab("active"); setView("list"); setPk(null); setNode(null); }}>진행 중</button>
-              <button className={`nav-btn nav-sub ${view === "list" && listTab === "done" ? "active" : ""}`} onClick={() => { setListTab("done"); setView("list"); setPk(null); setNode(null); }}>완료</button>
-            </div>
-            {/* 3) 프로젝트 열람 시 단계 네비 */}
-            {pk && view === "node" && (
-              <>
-                <div className="sec-label">단계 — {statusData?.business_key || ""}</div>
-                {nodes.map((n, i) => (
-                  <button key={n.node} className={`nav-btn ${node === n.node ? "active" : ""}`} onClick={() => setNode(n.node)}>
-                    <span className="num">{i + 1}</span><span className={`dot ${n.status || ""}`} /><span>{NODE_LABELS[n.node] || n.node}</span>
-                  </button>
-                ))}
-              </>
-            )}
-          </div>
+      <aside className="rail">
+        <div className="rail-top">
+          {/* 앱 표시 없음. 폴더=프로젝트(홈), 번개=에이전트 현황 */}
+          <button className={`rail-btn ${view === "list" || view === "new" || view === "node" ? "active" : ""}`} title="프로젝트" onClick={() => { setView("list"); setPk(null); setNode(null); }}><IconFolder /></button>
+          <button className={`rail-btn ${view === "agents" ? "active" : ""}`} title="에이전트" onClick={() => { setView("agents"); setPk(null); setNode(null); }}><IconBolt /></button>
         </div>
-        <div className="sb-bottom">
-          <div>
-            <div className="seg-label">모드</div>
-            <div className="seg">
-              <button className={mode === "light" ? "on" : ""} onClick={() => applyMode("light")}>라이트</button>
-              <button className={mode === "dark" ? "on" : ""} onClick={() => applyMode("dark")}>다크</button>
-            </div>
-          </div>
+        <div className="rail-bottom">
+          <button className="rail-btn" title={mode === "dark" ? "라이트 모드로" : "다크 모드로"} onClick={() => applyMode(mode === "dark" ? "light" : "dark")}><IconGear /></button>
         </div>
       </aside>
 
       <main className="main">
-        {view === "list" && <ProjectList onOpen={openProject} tab={listTab} onNew={() => { setView("new"); setPk(null); setNode(null); }} />}
+        {view === "list" && <ProjectList onOpen={openProject} onNew={() => { setView("new"); setPk(null); setNode(null); }} />}
+
+        {view === "agents" && <AgentsView onOpen={openProject} />}
 
         {view === "new" && (
           <div className="card">
+            <div className="actionbar" style={{ marginBottom: 12 }}><button className="btn-text" onClick={() => setView("list")}>← 프로젝트</button></div>
             <h2>새 프로젝트</h2>
             <div className="sub">고객 언어 그대로 입력하세요. AI가 해석(Discovery)한 뒤 사람이 확정합니다.</div>
             <label>목표 <span className="req">*</span></label>
@@ -456,8 +522,16 @@ export default function App() {
                 ? <button className="btn-primary" disabled={busy} onClick={approve}>{busy ? "처리 중…" : `확정 (${awaiting.map((a) => NODE_LABELS[a] || a).join(", ")})`}</button>
                 : <button className="btn-primary" disabled={busy} onClick={runStep}>{busy ? "실행 중…" : "다음 단계 실행"}</button>}
               <button className="btn-text" disabled={busy} onClick={() => withBusy(() => refresh(pk))} title="저장된 최신 상태로 화면을 다시 맞춥니다(재조회). 에이전트를 다시 돌리지 않습니다.">재정리</button>
-              <button className="btn-text" onClick={() => setView("list")}>← 목록</button>
+              <button className="btn-text" onClick={() => setView("list")}>← 프로젝트</button>
               {lastRun?.gate && <span className="muted">게이트 <span className={`gate g-${lastRun.gate.test}`}>test {lastRun.gate.test}</span><span className={`gate g-${lastRun.gate.review}`}>review {lastRun.gate.review}</span></span>}
+            </div>
+            {/* 단계 네비(사이드바에서 본문으로 이동): 가로 스트립 */}
+            <div className="stage-nav">
+              {nodes.map((n, i) => (
+                <button key={n.node} className={`stage-pill ${node === n.node ? "active" : ""}`} onClick={() => setNode(n.node)}>
+                  <span className={`dot ${n.status || ""}`} /><span className="num">{i + 1}</span>{NODE_LABELS[n.node] || n.node}
+                </button>
+              ))}
             </div>
             {awaiting.length > 0 && <div className="card"><div className="notice">사람 검토 대기: 아래 산출을 확인하고 "확정"하세요.</div></div>}
             {error && <div className="card"><div className="err">{error}</div></div>}
