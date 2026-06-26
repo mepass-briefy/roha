@@ -202,3 +202,50 @@ ul.oq { margin:8px 0 0; padding-left:18px; } ul.oq li { font-size:13px; color:va
 .rowbtn.del:hover { background:var(--danger-soft-bg); }
 .rowbtn.del .ico { width:14px; height:14px; }
 .pager { display:flex; gap:8px; align-items:center; margin-top:18px; }
+
+/* ===== 와이어프레임 박스 렌더링 (회색 플레이스홀더) ===== */
+.wf-frame { border:1px solid var(--line-strong); border-radius:var(--r-lg); overflow:hidden; margin-bottom:22px; background:var(--card); }
+.wf-titlebar { display:flex; align-items:center; gap:6px; padding:9px 14px; background:var(--raised); border-bottom:1px solid var(--line); }
+.wf-dot { width:8px; height:8px; border-radius:50%; background:var(--line-strong); flex:none; }
+.wf-screen-name { margin-left:8px; font-size:13px; font-weight:600; color:var(--text-2); }
+.wf-viewport { padding:16px; display:flex; flex-direction:column; gap:14px; background:repeating-linear-gradient(45deg,transparent,transparent 9px,rgba(0,0,0,0.012) 9px,rgba(0,0,0,0.012) 10px); }
+.wf-section { border:1px dashed var(--line-strong); border-radius:var(--r-md); padding:12px; position:relative; }
+.wf-section-label { font-size:11px; font-weight:600; color:var(--text-3); text-transform:none; margin-bottom:10px; letter-spacing:.2px; }
+.wf-comps { display:flex; flex-wrap:wrap; gap:10px; align-items:flex-start; }
+.wf-featrefs { margin-top:10px; font-size:11px; color:var(--text-3); }
+.wf-empty { font-size:12px; color:var(--text-3); padding:6px; }
+
+/* 컴포넌트 공통 박스 — 회색 */
+.wf-comp { background:var(--surf-l-1); border:1px solid var(--line-strong); border-radius:var(--r-sm); color:var(--text-3);
+  font-size:11px; min-height:40px; padding:8px 10px; display:flex; flex-direction:column; gap:6px; position:relative; }
+[data-mode="dark"] .wf-comp { background:var(--surf-d-2); }
+.wf-comp-label { font-size:10px; color:var(--text-3); font-weight:600; letter-spacing:.3px; }
+.wf-line { height:7px; border-radius:3px; background:var(--line-strong); }
+.wf-line.short { width:55%; }
+
+.wf-card { width:200px; }
+.wf-box { width:140px; align-items:center; justify-content:center; min-height:56px; font-weight:600; }
+.wf-table { width:100%; min-width:280px; }
+.wf-tr { height:11px; border-radius:2px; background:var(--surf-l-3); }
+[data-mode="dark"] .wf-tr { background:var(--surf-d-3); }
+.wf-th { background:var(--line-strong); }
+.wf-btn { width:104px; min-height:34px; align-items:center; justify-content:center; border-radius:var(--r-md);
+  background:var(--surf-l-3); font-weight:600; }
+[data-mode="dark"] .wf-btn { background:var(--surf-d-3); }
+.wf-badge { min-height:0; padding:3px 10px; border-radius:999px; font-weight:600; align-items:center; }
+.wf-input { width:240px; min-height:38px; justify-content:center; }
+.wf-ph { height:9px; width:60%; border-radius:3px; background:var(--line-strong); }
+.wf-sidebar { width:120px; min-height:140px; }
+.wf-tabs { width:240px; }
+.wf-tab { height:9px; border-radius:3px; background:var(--surf-l-3); display:inline-block; width:46px; margin-right:6px; }
+[data-mode="dark"] .wf-tab { background:var(--surf-d-3); }
+.wf-tab-on { background:var(--primary); opacity:.5; }
+.wf-profile { width:180px; flex-direction:row; align-items:center; gap:10px; }
+.wf-av { width:30px; height:30px; border-radius:50%; background:var(--line-strong); flex:none; }
+.wf-lines { flex:1; display:flex; flex-direction:column; gap:5px; }
+.wf-select { width:150px; min-height:34px; flex-direction:row; align-items:center; justify-content:space-between; }
+.wf-caret { color:var(--text-3); }
+.wf-control { flex-direction:row; align-items:center; gap:8px; min-height:0; padding:7px 10px; }
+.wf-ctl { width:16px; height:16px; border:1.5px solid var(--text-3); flex:none; border-radius:4px; }
+.wf-ctl-toggle { width:28px; height:16px; border-radius:999px; }
+.wf-ctl-radio_card { border-radius:50%; }

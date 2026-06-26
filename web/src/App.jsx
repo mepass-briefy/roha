@@ -183,9 +183,62 @@ function FeaturesView({ body }) {
   return (<>{(body.features || []).map((f, i) => <div className="item" key={i}>{f.feature}<span className={`badge ${cls[f.category] || "b-inference"}`}>{f.category}</span><div className="meta">출처: {f.source}</div></div>)}
     {(body.open_questions || []).length > 0 && <><h3>확인 필요</h3><ul className="oq">{body.open_questions.map((q, i) => <li key={i}>{q}</li>)}</ul></>}</>);
 }
+// 컴포넌트명 -> 와이어프레임 박스 모양(회색 플레이스홀더). 미지정은 라벨 박스.
+function WfComp({ name }) {
+  const label = <span className="wf-comp-label">{name}</span>;
+  if (name === "table") return (
+    <div className="wf-comp wf-table">{label}
+      <div className="wf-tr wf-th" /><div className="wf-tr" /><div className="wf-tr" /></div>);
+  if (name === "button") return <div className="wf-comp wf-btn">{name}</div>;
+  if (name === "badge") return <div className="wf-comp wf-badge">{name}</div>;
+  if (name === "input" || name === "search") return <div className="wf-comp wf-input"><span className="wf-ph" />{label}</div>;
+  if (name === "sidebar") return (
+    <div className="wf-comp wf-sidebar">{label}<div className="wf-line" /><div className="wf-line" /><div className="wf-line" /></div>);
+  if (name === "tab") return (
+    <div className="wf-comp wf-tabs">{label}<div className="wf-tab wf-tab-on" /><div className="wf-tab" /><div className="wf-tab" /></div>);
+  if (name === "profile") return (
+    <div className="wf-comp wf-profile">{label}<div className="wf-av" /><div className="wf-lines"><div className="wf-line" /><div className="wf-line short" /></div></div>);
+  if (name === "select") return <div className="wf-comp wf-select">{label}<span className="wf-caret">▾</span></div>;
+  if (name === "checkbox" || name === "toggle" || name === "radio_card")
+    return <div className="wf-comp wf-control"><span className={`wf-ctl wf-ctl-${name}`} />{name}</div>;
+  if (name === "card") return (
+    <div className="wf-comp wf-card">{label}<div className="wf-line" /><div className="wf-line short" /></div>);
+  return <div className="wf-comp wf-box">{name}</div>;
+}
+
+function WireframeView({ body }) {
+  const screens = body.screens || [];
+  const nav = body.navigation || {};
+  return (<>
+    {nav.pattern && <div className="muted" style={{ fontSize: 13, marginBottom: 14 }}>네비게이션: {nav.pattern}</div>}
+    {screens.length === 0 && <div className="muted">화면 없음</div>}
+    {screens.map((sc, si) => (
+      <div className="wf-frame" key={si}>
+        <div className="wf-titlebar"><span className="wf-dot" /><span className="wf-dot" /><span className="wf-dot" />
+          <span className="wf-screen-name">{sc.screen}</span></div>
+        <div className="wf-viewport">
+          {(sc.sections || []).map((se, sj) => (
+            <div className="wf-section" key={sj}>
+              <div className="wf-section-label">{se.section}</div>
+              <div className="wf-comps">
+                {(se.components || []).map((c, ck) => <WfComp name={c} key={ck} />)}
+                {(!se.components || se.components.length === 0) && <div className="wf-empty">(컴포넌트 없음)</div>}
+              </div>
+              {(se.feature_refs || []).length > 0 && <div className="wf-featrefs">{se.feature_refs.join(" · ")}</div>}
+            </div>
+          ))}
+          {(sc.sections || []).length === 0 && <div className="wf-empty">(영역 없음)</div>}
+        </div>
+      </div>
+    ))}
+    {(body.open_questions || []).length > 0 && <><h3>확인 필요</h3><ul className="oq">{body.open_questions.map((q, i) => <li key={i}>{q}</li>)}</ul></>}
+  </>);
+}
+
 function RecordBody({ rec, pk, onSaved }) {
   if (rec.type === "discovery") return <DiscoveryView body={rec.body} pk={pk} onSaved={onSaved} />;
   if (rec.type === "features") return <FeaturesView body={rec.body} />;
+  if (rec.type === "wireframe") return <WireframeView body={rec.body} />;
   return <StructuredView body={rec.body} />;
 }
 
