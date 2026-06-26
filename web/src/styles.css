@@ -1,58 +1,61 @@
-/* ROHA 디자인 시스템 (DESIGN_SYSTEM_SPEC.md / design-demo.html 기준).
-   테마: data-theme=indigo|coral (brand) × data-mode=dark (모드). 모든 색은 토큰만. 하드코딩 금지. */
+/* Forge Design System v1.0 (docs/DESIGN_SYSTEM_SPEC.md).
+   테마 4종 data-theme=blue|indigo|orange|green × data-mode=dark. accent=ramp 600(L)/500(D). 모든 색 토큰만. */
 :root {
-  /* surface 5단계 (엔진 산출) */
-  --surf-l-0:#FFFFFF; --surf-l-1:#F5F5F5; --surf-l-2:#F0EFF0; --surf-l-3:#EBEAEB; --surf-l-4:#E6E5E6;
-  --surf-d-0:#0A0A0A; --surf-d-1:#1A191A; --surf-d-2:#1F1E1F; --surf-d-3:#2C2B2C; --surf-d-4:#393739;
-  /* 의미색 (brand 무관 고정) */
-  --success-l:#10A957; --warning-l:#AE5F05; --danger-l:#B01C1C;
-  --success-d:#3DD17F; --warning-d:#E0A85F; --danger-d:#F1A7A7;
-  --active:#10A957;
-  /* 공통 라이트 중립 */
-  --bg:#FDFDFD; --card:#FFFFFF; --sidebar:#FFFFFF;
-  --raised:var(--surf-l-2); --line:#EBEAEB; --line-strong:#E0DFE0;
-  --text:#1A191A; --text-2:#6D6D6D; --text-3:#9A989A;
-  --success:var(--success-l); --warning:var(--warning-l); --danger:var(--danger-l);
-  /* neutral(주요 액션 대비용) + danger-soft(강조 위험) */
-  --neutral:#292929; --on-neutral:#FFFFFF; --danger-soft-bg:#FFF0F0; --danger-soft-fg:#AB0909;
-  /* 의미색 솔리드 배지 텍스트(라이트=흰, 다크=어둠 — 다크 의미색이 밝아 대비 보존) + 체크/노브(밝은 checked 위 항상 흰) */
-  --on-semantic:#FFFFFF; --on-checked:#FFFFFF;
-  /* brand 기본값(인디고 라이트) — 초기 스크립트가 data-theme 설정 전 안전망 */
-  --primary:#354497; --on-primary:#FFFFFF; --primary-container:#D9DDF2; --on-primary-container:#0D1126;
-  --tab-bg:#EDF9FF; --tab-fg:#1056BD; --menu-sel:#EEEEEE; --checked:#51C0FF;
-  --r-sm:7px; --r-md:9px; --r-lg:14px;
+  /* 테마 램프(기본 indigo 안전망 — [data-theme]가 덮음) */
+  --c-50:#F7F3FF; --c-100:#EFE9FE; --c-200:#E2D6FE; --c-300:#CBB5FD; --c-400:#AD8BFA; --c-500:#8B5CF6;
+  --c-600:#713AED; --c-700:#5E28D9; --c-800:#4E21B6; --c-900:#421D95; --c-950:#230A5E;
+
+  /* 중립/표면 (Light) */
+  --bg:#FFFFFF; --sidebar:#F7F8FA; --surface:#F6F7F9; --elevated:#FFFFFF; --border:#E6E8EC; --hover:#F0F1F4;
+  --text:#16191F; --dim:#5B616E; --faint:#9AA0AC; --sidebar-text:#16191F; --sidebar-dim:#6B7280;
+
+  /* 시맨틱 (Light): accent=600, soft=50, soft-text=700 */
+  --accent:var(--c-600); --accent-hover:var(--c-700); --accent-soft:var(--c-50); --accent-soft-text:var(--c-700);
+  --on-accent:#FFFFFF; --ring:color-mix(in srgb, var(--c-500) 40%, transparent);
+  --success:#10A957; --danger:#E5484D; --warning:#ED5709; --info:var(--accent); --active:var(--success);
+
+  /* radius(4px 그리드) + spacing + 폰트 */
+  --r-sm:4px; --r-md:6px; --r-lg:8px; --r-xl:10px; --r-2xl:14px; --r-full:9999px;
+  --sp-1:4px; --sp-2:8px; --sp-3:12px; --sp-4:16px; --sp-5:20px; --sp-6:24px; --sp-8:32px; --sp-10:40px; --sp-12:48px; --sp-16:64px;
   --sidebar-w:240px;
   --font:'Pretendard','Noto Sans KR',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
   color-scheme:light;
+
+  /* ===== 호환 별칭(기존 컴포넌트 클래스가 참조하는 토큰 -> v1 토큰 매핑) ===== */
+  --card:var(--elevated); --raised:var(--hover); --line:var(--border); --line-strong:var(--border);
+  --text-2:var(--dim); --text-3:var(--faint);
+  --primary:var(--accent); --on-primary:var(--on-accent); --primary-container:var(--accent-soft); --on-primary-container:var(--accent-soft-text);
+  --menu-sel:var(--hover); --checked:var(--accent); --tab-bg:var(--accent-soft); --tab-fg:var(--accent-soft-text);
+  --neutral:#16191F; --on-neutral:#FFFFFF;
+  --danger-soft-bg:color-mix(in srgb, var(--danger) 12%, transparent); --danger-soft-fg:var(--danger);
+  --on-semantic:#FFFFFF; --on-checked:#FFFFFF;
+  /* surface 단계 별칭(레거시 wireframe 박스 등) -> v1 모드인지 토큰 */
+  --surf-l-0:var(--elevated); --surf-l-1:var(--surface); --surf-l-2:var(--hover); --surf-l-3:var(--border); --surf-l-4:var(--border);
+  --surf-d-0:var(--bg); --surf-d-1:var(--surface); --surf-d-2:var(--elevated); --surf-d-3:var(--hover); --surf-d-4:var(--border);
 }
-[data-theme="indigo"] {
-  --primary:#354497; --on-primary:#FFFFFF; --primary-container:#D9DDF2; --on-primary-container:#0D1126;
-  --tab-bg:#EDF9FF; --tab-fg:#1056BD; --menu-sel:#EEEEEE; --checked:#51C0FF;
-  --neutral:#292929; --on-neutral:#FFFFFF;
-}
-[data-theme="coral"] {
-  --primary:#CC0000; --on-primary:#FFFFFF; --primary-container:#FFCCCC; --on-primary-container:#330000;
-  --tab-bg:#FFEFEF; --tab-fg:#FF5E5E; --menu-sel:#EEEEEE; --checked:#FF5E5E;
-  --neutral:#292F45; --on-neutral:#FFFFFF;  /* 남색기 — 빨강 danger와 대비 강화 */
-}
+/* 테마 램프(11단계) */
+[data-theme="blue"]   { --c-50:#EDF9FF; --c-100:#D8F0FF; --c-200:#B9E6FF; --c-300:#89D7FF; --c-400:#51C0FF; --c-500:#29A1FF; --c-600:#1886FE; --c-700:#0B6AEA; --c-800:#1056BD; --c-900:#144A94; --c-950:#112E5A; }
+[data-theme="indigo"] { --c-50:#F7F3FF; --c-100:#EFE9FE; --c-200:#E2D6FE; --c-300:#CBB5FD; --c-400:#AD8BFA; --c-500:#8B5CF6; --c-600:#713AED; --c-700:#5E28D9; --c-800:#4E21B6; --c-900:#421D95; --c-950:#230A5E; }
+[data-theme="orange"] { --c-50:#FFF7ED; --c-100:#FFEDD4; --c-200:#FFD7A9; --c-300:#FFBA72; --c-400:#FE9239; --c-500:#FD7212; --c-600:#ED5709; --c-700:#C54009; --c-800:#9C3310; --c-900:#7E2C10; --c-950:#441306; }
+[data-theme="green"]  { --c-50:#EFFEF5; --c-100:#DBFDEA; --c-200:#B9F9D5; --c-300:#82F3B5; --c-400:#44E48C; --c-500:#1DD772; --c-600:#10A957; --c-700:#118446; --c-800:#13683B; --c-900:#115632; --c-950:#03301A; }
+
+/* 다크: 콘텐츠 중립 다크 통일 + 시맨틱 다크(accent=500) */
 [data-mode="dark"] {
-  --bg:var(--surf-d-0); --card:var(--surf-d-1); --sidebar:var(--surf-d-1);
-  --raised:var(--surf-d-2); --line:#2C2B2C; --line-strong:#393739;
-  --text:#E6E5E6; --text-2:#A4A2A4; --text-3:#6D6B6D;
-  --success:var(--success-d); --warning:var(--warning-d); --danger:var(--danger-d);
-  --menu-sel:var(--surf-d-3);
-  --neutral:#E6E5E6; --on-neutral:#1A191A; --danger-soft-bg:#3A1515; --danger-soft-fg:#F1A7A7;
-  --on-semantic:#1A191A;  /* 다크: 밝아진 의미색 위 어두운 텍스트(대비 보존) */
+  --bg:#1A1A1C; --surface:#222224; --elevated:#282828; --border:#343438; --hover:#282828;
+  --text:#ECECEE; --dim:#9B9BA2; --faint:#6B6B72; --sidebar-text:#F2F2F4; --sidebar-dim:#AAAAB2;
+  --accent:var(--c-500); --accent-hover:var(--c-400); --accent-soft:color-mix(in srgb, var(--c-500) 16%, transparent); --accent-soft-text:var(--c-300);
+  --ring:color-mix(in srgb, var(--c-400) 40%, transparent);
+  --success:#1DD772; --danger:#FF6166; --warning:#FE9239;
+  --neutral:#ECECEE; --on-neutral:#16191F; --on-semantic:#16191F;
+  --danger-soft-bg:color-mix(in srgb, var(--danger) 20%, transparent);
+  --sidebar:#1A1A1C;  /* 테마 미지정 시 폴백, 아래 per-theme이 덮음 */
   color-scheme:dark;
 }
-[data-theme="indigo"][data-mode="dark"] {
-  --primary:#B3BBE5; --on-primary:#1A224C; --primary-container:#283371; --on-primary-container:#D9DDF2;
-  --tab-bg:#0D1F35; --tab-fg:#5BA3D4; --checked:#51C0FF;
-}
-[data-theme="coral"][data-mode="dark"] {
-  --primary:#FF9999; --on-primary:#660000; --primary-container:#990000; --on-primary-container:#FFCCCC;
-  --tab-bg:#2D1515; --tab-fg:#FF5E5E; --checked:#FF5E5E;
-}
+/* 다크 사이드바: 테마 950보다 한 단계 어두운 톤(테마 정체성) */
+[data-mode="dark"][data-theme="blue"]   { --sidebar:#0A1C38; }
+[data-mode="dark"][data-theme="indigo"] { --sidebar:#15053A; }
+[data-mode="dark"][data-theme="orange"] { --sidebar:#2A0B03; }
+[data-mode="dark"][data-theme="green"]  { --sidebar:#021E0F; }
 
 * { box-sizing:border-box; }
 body { margin:0; font-family:var(--font); background:var(--bg); color:var(--text); line-height:1.55;
@@ -294,10 +297,10 @@ ul.oq { margin:8px 0 0; padding-left:18px; } ul.oq li { font-size:13px; color:va
   display:flex; flex-direction:column; align-items:center; justify-content:space-between; padding:18px 0;
   position:sticky; top:0; height:100vh; }
 .rail-top, .rail-bottom { display:flex; flex-direction:column; gap:8px; align-items:center; }
-.rail-btn { width:40px; height:40px; border-radius:var(--r-md); border:none; background:transparent; color:var(--text-3);
+.rail-btn { width:40px; height:40px; border-radius:var(--r-md); border:none; background:transparent; color:var(--sidebar-dim);
   display:flex; align-items:center; justify-content:center; cursor:pointer; }
-.rail-btn:hover { background:var(--raised); color:var(--text); }
-.rail-btn.active { background:var(--menu-sel); color:var(--primary); }
+.rail-btn:hover { background:color-mix(in srgb, var(--sidebar-text) 10%, transparent); color:var(--sidebar-text); }
+.rail-btn.active { background:color-mix(in srgb, var(--sidebar-text) 14%, transparent); color:var(--accent); }
 .rail-btn .ico { width:20px; height:20px; }
 
 /* 카드 상태 배지(진행중/등록/완료) */
