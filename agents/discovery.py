@@ -221,7 +221,7 @@ def offline_llm(system: str, user: str) -> str:
     return json.dumps(body, ensure_ascii=False)
 
 
-def make_real_llm(model=REAL_MODEL_DEFAULT, max_tokens=4096):
+def make_real_llm(model=REAL_MODEL_DEFAULT, max_tokens=8192):
     """real llm(system, user) -> str. Anthropic messages API(검색 없음).
     실패(SDK 미설치/키 없음/네트워크/API 에러)는 mock 폴백 없이 RuntimeError."""
     def real_llm(system: str, user: str) -> str:
@@ -251,12 +251,125 @@ def make_real_llm(model=REAL_MODEL_DEFAULT, max_tokens=4096):
 real_llm = make_real_llm()
 
 
+SPLIT_THRESHOLD = 8   # 이 이상 요구면 real에서 배치 분할(대형 브리프 truncation 해소)
+DISC_BATCH = 4        # 배치 크기(proposed_requirements가 길어 작게. 요구는 역할 순서라 순서 배치=역할 응집)
+
+
+def _normalize_discovery(body: dict) -> dict:
+    """real 산출 방어 정규화(산출 로직 내재화): 누락 origin·provenance 기본값. 형상 보정만, 발명 0."""
+    for r in (body.get("requirement_normalization") or []):
+        if not r.get("origin"):
+            r["origin"] = "explicit"
+    for p in (body.get("proposed_requirements") or []):
+        if not p.get("origin"):
+            p["origin"] = "proposed"
+    gi = body.setdefault("goal_interpretation", {})
+    for k in GI_KEYS:
+        gi.setdefault(k, [])
+    prov = body.setdefault("provenance", {})
+    prov.setdefault("goal_interpretation", "inference")
+    if body.get("requirement_normalization"):
+        prov.setdefault("requirement_normalization", "per_item")
+    if body.get("proposed_requirements"):
+        prov.setdefault("proposed_requirements", "inference")
+    prov["target_platform"] = "fact"
+    body.setdefault("open_questions", [])
+    return body
+
+
+def _renumber(part: dict, r_start: int, p_start: int):
+    """배치 산출의 R-/P- id를 전역 순번으로 유일화하고, 배치 내부 basis/statement 참조도 함께 치환(추적 보존)."""
+    import re as _re
+    rmap, pmap = {}, {}
+    reqs = part.get("requirement_normalization") or []
+    for i, r in enumerate(reqs):
+        old = r.get("id")
+        new = f"R-{r_start + i:02d}"
+        if old:
+            rmap[old] = new
+        r["id"] = new
+    props = part.get("proposed_requirements") or []
+    for i, p in enumerate(props):
+        old = p.get("id")
+        new = f"P-{p_start + i:02d}"
+        if old:
+            pmap[old] = new
+        p["id"] = new
+
+    def fix(s):
+        if not isinstance(s, str):
+            return s
+        for o, n in sorted(rmap.items(), key=lambda x: -len(x[0])):
+            s = s.replace(o, n)
+        for o, n in sorted(pmap.items(), key=lambda x: -len(x[0])):
+            s = s.replace(o, n)
+        return s
+    for p in props:
+        p["basis"] = fix(p.get("basis"))
+        p["statement"] = fix(p.get("statement"))
+    for r in reqs:
+        r["statement"] = fix(r.get("statement"))
+    return len(reqs), len(props)
+
+
+def _merge_discovery(parts: list, target_platform: str) -> dict:
+    """배치 산출들 -> 하나의 discovery 산출(기존 스키마 동형). 권위: 요구 상세=각 배치, goal·교차 dedupe."""
+    req, prop, oq = [], [], []
+    gi = {k: [] for k in GI_KEYS}
+    r_off, p_off = 1, 1
+    for part in parts:
+        _normalize_discovery(part)
+        nr, np_ = _renumber(part, r_off, p_off)
+        r_off += nr
+        p_off += np_
+        req += part.get("requirement_normalization") or []
+        prop += part.get("proposed_requirements") or []
+        oq += part.get("open_questions") or []
+        g = part.get("goal_interpretation") or {}
+        for k in GI_KEYS:
+            gi[k] += g.get(k) or []
+
+    def dedupe(lst, key):
+        seen, out = set(), []
+        for x in lst:
+            kk = x.get(key) if isinstance(x, dict) else x
+            if kk in seen:
+                continue
+            seen.add(kk)
+            out.append(x)
+        return out
+    gi["inferred_dimensions"] = dedupe(gi["inferred_dimensions"], "dimension")
+    gi["candidate_metrics"] = dedupe(gi["candidate_metrics"], "metric")
+    gi["assumptions"] = dedupe(gi["assumptions"], "assumption")
+    oq = list(dict.fromkeys(oq))
+    return {
+        "goal_interpretation": gi,
+        "requirement_normalization": req,
+        "proposed_requirements": prop,
+        "open_questions": oq,
+        "target_platform": target_platform if target_platform in TARGET_PLATFORMS else "미정",
+        "provenance": {"goal_interpretation": "inference", "requirement_normalization": "per_item",
+                       "proposed_requirements": "inference", "target_platform": "fact"},
+    }
+
+
 def produce(inputs: dict, llm=offline_llm) -> dict:
     intake = inputs["intake"]
+    reqs = intake.get("requirements", []) or []
+    # 대형 브리프(real): 요구를 배치로 나눠 호출 -> 각 호출 출력이 작아 truncation 해소. 합친 결과는 기존 스키마 동형.
+    if llm is not offline_llm and len(reqs) >= SPLIT_THRESHOLD:
+        parts = []
+        for i in range(0, len(reqs), DISC_BATCH):
+            sub = dict(intake)
+            sub["requirements"] = reqs[i:i + DISC_BATCH]
+            raw = llm(SYSTEM_PROMPT, build_user_prompt(sub))
+            parts.append(json.loads(_extract_json(raw)))
+        merged = _merge_discovery(parts, intake.get("target_platform") or "미정")
+        return validate(merged)
+    # 단일 경로(offline 또는 소형 real). 기존 동작 보존.
     raw = llm(SYSTEM_PROMPT, build_user_prompt(intake))
-    raw = raw.replace("```json", "").replace("```", "").strip()
-    body = json.loads(raw)
-    return validate(body)
+    body = json.loads(_extract_json(raw))
+    return validate(_normalize_discovery(body))
 
 
 def make_producer(llm=offline_llm):

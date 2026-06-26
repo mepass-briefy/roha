@@ -229,18 +229,62 @@ def make_real_llm(model=REAL_MODEL_DEFAULT, max_tokens=8192):
 real_llm = make_real_llm()
 
 
+WF_SPLIT_THRESHOLD = 6   # ux IA 화면이 이 이상이면 real에서 배치 분할(대형 브리프 truncation 해소)
+WF_BATCH = 4             # 배치 크기(ux IA가 역할별로 정렬돼 있어 순서 배치가 역할별 분할이 된다)
+
+
+def _merge_wireframe(parts: list) -> dict:
+    """배치 산출들 -> 하나의 wireframe 산출(기존 스키마 동형). 화면명 dedupe(공통 화면 먼저 정의·중복 차단)."""
+    palette, feat_idx = [], []
+    screens, oq = [], []
+    seen = set()
+    for b in parts:
+        if not palette:
+            palette = b.get("design_component_palette") or []
+        if not feat_idx:
+            feat_idx = b.get("feature_index") or []
+        for s in (b.get("screens") or []):
+            nm = s.get("screen")
+            if nm in seen:
+                continue
+            seen.add(nm)
+            screens.append(s)
+        oq += b.get("open_questions") or []
+    nav = {"pattern": "left-sidebar" if len(screens) > 1 else "single-screen",
+           "items": [s["screen"] for s in screens],
+           "uses_component": "nav" if "nav" in set(palette) else None}
+    return {"design_component_palette": palette, "feature_index": feat_idx, "screens": screens,
+            "navigation": nav, "open_questions": list(dict.fromkeys(oq)),
+            "provenance": {"design_component_palette": "fact", "feature_index": "fact",
+                           "screens": "per_item", "sections": "inference", "navigation": "inference"}}
+
+
 def produce(inputs: dict, llm=offline_llm) -> dict:
     features = inputs["features"]
     design_system = inputs.get("design_system", {})
     ux = inputs.get("ux", {})
     discovery = inputs.get("discovery", {})  # v13: 목표·요구를 화면 구성에 반영(real 프롬프트)
+    ia = (ux or {}).get("information_architecture", []) or []
+    # 대형 브리프(real): ux IA 화면을 배치로 나눠 호출 -> 각 호출 화면 수가 작아 truncation 해소. 합친 결과는 기존 스키마 동형.
+    if llm is not offline_llm and len(ia) >= WF_SPLIT_THRESHOLD:
+        parts = []
+        for i in range(0, len(ia), WF_BATCH):
+            ux_sub = dict(ux)
+            ux_sub["information_architecture"] = ia[i:i + WF_BATCH]
+            up = build_user_prompt(features, design_system, ux_sub, discovery)
+            try:
+                raw = llm(SYSTEM_PROMPT, up)
+            except RuntimeError:
+                raw = offline_llm(SYSTEM_PROMPT, up)
+            parts.append(json.loads(_extract_json(raw)))
+        return validate(_merge_wireframe(parts))
+    # 단일 경로(offline 또는 소형 real). 기존 동작 보존.
     up = build_user_prompt(features, design_system, ux, discovery)
     try:
         raw = llm(SYSTEM_PROMPT, up)
     except RuntimeError:
-        raw = offline_llm(SYSTEM_PROMPT, up)  # real 실패 -> offline 폴백
-    raw = raw.replace("```json", "").replace("```", "").strip()
-    body = json.loads(raw)
+        raw = offline_llm(SYSTEM_PROMPT, up)
+    body = json.loads(_extract_json(raw))
     return validate(body)
 
 
