@@ -1,0 +1,975 @@
+{
+ "api_spec": {
+  "response_contract": {
+   "success": {
+    "success": true,
+    "data": {}
+   },
+   "error": {
+    "success": false,
+    "error": {
+     "code": "",
+     "message": ""
+    }
+   }
+  },
+  "endpoints": [
+   {
+    "endpoint_id": "EP-APP-001",
+    "method": "POST",
+    "path": "/api/v1/applications",
+    "feature_ref": "개인 신청",
+    "security_ref": "개인정보(PII) 보호·최소수집, 신청 입력 검증·권한 확인",
+    "request_schema": [
+     {
+      "name": "name",
+      "type": "string",
+      "required": true,
+      "format": "non-empty string",
+      "min": 1,
+      "max": 100,
+      "enum": null
+     },
+     {
+      "name": "phone",
+      "type": "string",
+      "required": true,
+      "format": "E.164",
+      "min": null,
+      "max": null,
+      "enum": null
+     },
+     {
+      "name": "email",
+      "type": "string",
+      "required": false,
+      "format": "email",
+      "min": null,
+      "max": null,
+      "enum": null
+     }
+    ],
+    "success_cases": [
+     {
+      "code": "APPLICATION_CREATED",
+      "http_status": 201,
+      "description": "개인 신청이 정상적으로 접수됨"
+     }
+    ],
+    "error_cases": [
+     {
+      "code": "INVALID_REQUEST",
+      "http_status": 400,
+      "description": "필수 필드 누락 또는 형식 오류"
+     },
+     {
+      "code": "UNAUTHORIZED",
+      "http_status": 401,
+      "description": "인증 실패 — 인증 수단 미확정, open_questions 참조"
+     },
+     {
+      "code": "FORBIDDEN",
+      "http_status": 403,
+      "description": "권한 없음 — 권한 모델 미확정, open_questions 참조"
+     }
+    ],
+    "acceptance_criteria": [
+     "진입 가능",
+     "개인 신청 수행 가능",
+     "확인 가능",
+     "완료 가능"
+    ],
+    "pagination": null,
+    "exposure": "internal",
+    "provenance": {
+     "endpoint_id": "fact",
+     "feature_ref": "fact",
+     "security_ref": "fact",
+     "request_schema": "inference — PII 필드 목록(name/phone/email)은 provisional, 최소수집 범위 확정 필요",
+     "success_cases": "inference",
+     "error_cases": "inference",
+     "acceptance_criteria": "fact"
+    }
+   },
+   {
+    "endpoint_id": "EP-APP-002",
+    "method": "GET",
+    "path": "/api/v1/applications/{public_key}",
+    "feature_ref": "개인 신청",
+    "security_ref": "개인정보(PII) 보호·최소수집, 신청 입력 검증·권한 확인",
+    "request_schema": [
+     {
+      "name": "public_key",
+      "type": "string",
+      "required": true,
+      "format": "path-param, random-alphanumeric-12",
+      "min": null,
+      "max": null,
+      "enum": null
+     }
+    ],
+    "success_cases": [
+     {
+      "code": "APPLICATION_FOUND",
+      "http_status": 200,
+      "description": "신청 상세 조회 성공 — PII 마스킹 수준 미확정, open_questions 참조"
+     }
+    ],
+    "error_cases": [
+     {
+      "code": "INVALID_REQUEST",
+      "http_status": 400,
+      "description": "public_key 형식 오류"
+     },
+     {
+      "code": "UNAUTHORIZED",
+      "http_status": 401,
+      "description": "인증 실패"
+     },
+     {
+      "code": "FORBIDDEN",
+      "http_status": 403,
+      "description": "본인 외 접근 차단"
+     },
+     {
+      "code": "APPLICATION_NOT_FOUND",
+      "http_status": 404,
+      "description": "해당 public_key의 신청 없음"
+     }
+    ],
+    "acceptance_criteria": [
+     "진입 가능",
+     "확인 가능"
+    ],
+    "pagination": null,
+    "exposure": "internal",
+    "provenance": {
+     "endpoint_id": "fact",
+     "feature_ref": "fact",
+     "security_ref": "fact",
+     "request_schema": "inference",
+     "success_cases": "inference",
+     "error_cases": "inference",
+     "acceptance_criteria": "fact"
+    }
+   },
+   {
+    "endpoint_id": "EP-APP-003",
+    "method": "GET",
+    "path": "/api/v1/applications",
+    "feature_ref": "개인 신청",
+    "security_ref": "개인정보(PII) 보호·최소수집, 신청 입력 검증·권한 확인",
+    "request_schema": [
+     {
+      "name": "cursor",
+      "type": "string",
+      "required": false,
+      "format": "opaque cursor token",
+      "min": null,
+      "max": null,
+      "enum": null
+     },
+     {
+      "name": "limit",
+      "type": "integer",
+      "required": false,
+      "format": "1–100",
+      "min": 1,
+      "max": 100,
+      "enum": null
+     }
+    ],
+    "success_cases": [
+     {
+      "code": "APPLICATIONS_LISTED",
+      "http_status": 200,
+      "description": "신청 목록 조회 성공 — cursor pagination 적용, PII 마스킹 수준 미확정"
+     }
+    ],
+    "error_cases": [
+     {
+      "code": "INVALID_REQUEST",
+      "http_status": 400,
+      "description": "파라미터 형식 오류"
+     },
+     {
+      "code": "UNAUTHORIZED",
+      "http_status": 401,
+      "description": "인증 실패"
+     },
+     {
+      "code": "FORBIDDEN",
+      "http_status": 403,
+      "description": "권한 없음"
+     }
+    ],
+    "acceptance_criteria": [
+     "진입 가능",
+     "확인 가능"
+    ],
+    "pagination": {
+     "request": [
+      "cursor",
+      "limit"
+     ],
+     "response": [
+      "items",
+      "next_cursor"
+     ],
+     "note": "가변·대량 목록 — cursor pagination 적용"
+    },
+    "exposure": "internal",
+    "provenance": {
+     "endpoint_id": "fact",
+     "feature_ref": "fact",
+     "security_ref": "fact",
+     "request_schema": "inference",
+     "success_cases": "inference",
+     "error_cases": "inference",
+     "acceptance_criteria": "fact"
+    }
+   },
+   {
+    "endpoint_id": "EP-RES-001",
+    "method": "POST",
+    "path": "/api/v1/reservations",
+    "feature_ref": "매치 예약",
+    "security_ref": "예약 변조 방지·동시성 제어",
+    "request_schema": [
+     {
+      "name": "application_public_key",
+      "type": "string",
+      "required": true,
+      "format": "random-alphanumeric-12",
+      "min": null,
+      "max": null,
+      "enum": null
+     },
+     {
+      "name": "match_datetime",
+      "type": "string",
+      "required": true,
+      "format": "ISO-8601 datetime",
+      "min": null,
+      "max": null,
+      "enum": null
+     },
+     {
+      "name": "venue",
+      "type": "string",
+      "required": true,
+      "format": "non-empty string",
+      "min": 1,
+      "max": 200,
+      "enum": null
+     },
+     {
+      "name": "idempotency_key",
+      "type": "string",
+      "required": false,
+      "format": "UUID v4",
+      "min": null,
+      "max": null,
+      "enum": null
+     }
+    ],
+    "success_cases": [
+     {
+      "code": "RESERVATION_CREATED",
+      "http_status": 201,
+      "description": "매치 예약이 정상 생성됨"
+     },
+     {
+      "code": "RESERVATION_DUPLICATE_ACCEPTED",
+      "http_status": 200,
+      "description": "동일 idempotency_key로 재요청 시 기존 예약 반환 — 처리 방식 미확정, open_questions 참조"
+     }
+    ],
+    "error_cases": [
+     {
+      "code": "INVALID_REQUEST",
+      "http_status": 400,
+      "description": "필수 필드 누락 또는 형식 오류"
+     },
+     {
+      "code": "UNAUTHORIZED",
+      "http_status": 401,
+      "description": "인증 실패"
+     },
+     {
+      "code": "FORBIDDEN",
+      "http_status": 403,
+      "description": "권한 없음"
+     },
+     {
+      "code": "APPLICATION_NOT_FOUND",
+      "http_status": 404,
+      "description": "application_public_key에 해당하는 신청 없음"
+     },
+     {
+      "code": "RESERVATION_CONFLICT",
+      "http_status": 409,
+      "description": "동시 예약 충돌 — 동시성 제어 security_ref 근거"
+     }
+    ],
+    "acceptance_criteria": [
+     "진입 가능",
+     "매치 예약 수행 가능",
+     "확인 가능",
+     "완료 가능"
+    ],
+    "pagination": null,
+    "exposure": "internal",
+    "provenance": {
+     "endpoint_id": "fact",
+     "feature_ref": "fact",
+     "security_ref": "fact",
+     "request_schema": "inference",
+     "success_cases": "inference — RESERVATION_DUPLICATE_ACCEPTED는 idempotency_key 처리 방식 확정 후 재검토",
+     "error_cases": "inference — RESERVATION_CONFLICT는 동시성 제어 security_ref 근거로 domain case 포함",
+     "acceptance_criteria": "fact"
+    }
+   },
+   {
+    "endpoint_id": "EP-RES-002",
+    "method": "GET",
+    "path": "/api/v1/reservations/{public_key}",
+    "feature_ref": "매치 예약",
+    "security_ref": "예약 변조 방지·동시성 제어",
+    "request_schema": [
+     {
+      "name": "public_key",
+      "type": "string",
+      "required": true,
+      "format": "path-param, random-alphanumeric-12",
+      "min": null,
+      "max": null,
+      "enum": null
+     }
+    ],
+    "success_cases": [
+     {
+      "code": "RESERVATION_FOUND",
+      "http_status": 200,
+      "description": "예약 상세 조회 성공"
+     }
+    ],
+    "error_cases": [
+     {
+      "code": "INVALID_REQUEST",
+      "http_status": 400,
+      "description": "public_key 형식 오류"
+     },
+     {
+      "code": "UNAUTHORIZED",
+      "http_status": 401,
+      "description": "인증 실패"
+     },
+     {
+      "code": "FORBIDDEN",
+      "http_status": 403,
+      "description": "권한 없음"
+     },
+     {
+      "code": "RESERVATION_NOT_FOUND",
+      "http_status": 404,
+      "description": "해당 public_key의 예약 없음"
+     }
+    ],
+    "acceptance_criteria": [
+     "진입 가능",
+     "확인 가능"
+    ],
+    "pagination": null,
+    "exposure": "internal",
+    "provenance": {
+     "endpoint_id": "fact",
+     "feature_ref": "fact",
+     "security_ref": "fact",
+     "request_schema": "inference",
+     "success_cases": "inference",
+     "error_cases": "inference",
+     "acceptance_criteria": "fact"
+    }
+   },
+   {
+    "endpoint_id": "EP-RES-003",
+    "method": "GET",
+    "path": "/api/v1/reservations",
+    "feature_ref": "매치 예약",
+    "security_ref": "예약 변조 방지·동시성 제어",
+    "request_schema": [
+     {
+      "name": "cursor",
+      "type": "string",
+      "required": false,
+      "format": "opaque cursor token",
+      "min": null,
+      "max": null,
+      "enum": null
+     },
+     {
+      "name": "limit",
+      "type": "integer",
+      "required": false,
+      "format": "1–100",
+      "min": 1,
+      "max": 100,
+      "enum": null
+     }
+    ],
+    "success_cases": [
+     {
+      "code": "RESERVATIONS_LISTED",
+      "http_status": 200,
+      "description": "예약 목록 조회 성공 — cursor pagination 적용"
+     }
+    ],
+    "error_cases": [
+     {
+      "code": "INVALID_REQUEST",
+      "http_status": 400,
+      "description": "파라미터 형식 오류"
+     },
+     {
+      "code": "UNAUTHORIZED",
+      "http_status": 401,
+      "description": "인증 실패"
+     },
+     {
+      "code": "FORBIDDEN",
+      "http_status": 403,
+      "description": "권한 없음"
+     }
+    ],
+    "acceptance_criteria": [
+     "진입 가능",
+     "확인 가능"
+    ],
+    "pagination": {
+     "request": [
+      "cursor",
+      "limit"
+     ],
+     "response": [
+      "items",
+      "next_cursor"
+     ],
+     "note": "가변·대량 목록 — cursor pagination 적용"
+    },
+    "exposure": "internal",
+    "provenance": {
+     "endpoint_id": "fact",
+     "feature_ref": "fact",
+     "security_ref": "fact",
+     "request_schema": "inference",
+     "success_cases": "inference",
+     "error_cases": "inference",
+     "acceptance_criteria": "fact"
+    }
+   },
+   {
+    "endpoint_id": "EP-RES-004",
+    "method": "PATCH",
+    "path": "/api/v1/reservations/{public_key}",
+    "feature_ref": "매치 예약",
+    "security_ref": "예약 변조 방지·동시성 제어",
+    "request_schema": [
+     {
+      "name": "public_key",
+      "type": "string",
+      "required": true,
+      "format": "path-param, random-alphanumeric-12",
+      "min": null,
+      "max": null,
+      "enum": null
+     },
+     {
+      "name": "status",
+      "type": "string",
+      "required": false,
+      "format": "enum",
+      "min": null,
+      "max": null,
+      "enum": [
+       "CONFIRMED",
+       "CANCELLED"
+      ]
+     },
+     {
+      "name": "if_match",
+      "type": "string",
+      "required": false,
+      "format": "ETag value",
+      "min": null,
+      "max": null,
+      "enum": null
+     }
+    ],
+    "success_cases": [
+     {
+      "code": "RESERVATION_UPDATED",
+      "http_status": 200,
+      "description": "예약 상태 변경 성공"
+     }
+    ],
+    "error_cases": [
+     {
+      "code": "INVALID_REQUEST",
+      "http_status": 400,
+      "description": "필드 형식 오류"
+     },
+     {
+      "code": "UNAUTHORIZED",
+      "http_status": 401,
+      "description": "인증 실패"
+     },
+     {
+      "code": "FORBIDDEN",
+      "http_status": 403,
+      "description": "권한 없음"
+     },
+     {
+      "code": "RESERVATION_NOT_FOUND",
+      "http_status": 404,
+      "description": "해당 public_key의 예약 없음"
+     },
+     {
+      "code": "RESERVATION_VERSION_CONFLICT",
+      "http_status": 409,
+      "description": "낙관적 잠금 충돌 — ETag 적용 여부 미확정, open_questions 참조"
+     }
+    ],
+    "acceptance_criteria": [
+     "매치 예약 수행 가능",
+     "확인 가능",
+     "완료 가능"
+    ],
+    "pagination": null,
+    "exposure": "internal",
+    "provenance": {
+     "endpoint_id": "fact",
+     "feature_ref": "fact",
+     "security_ref": "fact",
+     "request_schema": "inference — if_match 전달 방식(헤더 vs 바디) 미확정",
+     "success_cases": "inference",
+     "error_cases": "inference — RESERVATION_VERSION_CONFLICT는 동시성 제어 security_ref 근거로 domain case 포함",
+     "acceptance_criteria": "fact"
+    }
+   },
+   {
+    "endpoint_id": "EP-STL-001",
+    "method": "GET",
+    "path": "/api/v1/settlements/{public_key}",
+    "feature_ref": "정산 확인",
+    "security_ref": "정산 데이터 무결성·접근통제",
+    "request_schema": [
+     {
+      "name": "public_key",
+      "type": "string",
+      "required": true,
+      "format": "path-param, random-alphanumeric-12",
+      "min": null,
+      "max": null,
+      "enum": null
+     }
+    ],
+    "success_cases": [
+     {
+      "code": "SETTLEMENT_FOUND",
+      "http_status": 200,
+      "description": "정산 상세 조회 성공 — 재무데이터 sensitivity:high, 접근통제 적용"
+     }
+    ],
+    "error_cases": [
+     {
+      "code": "INVALID_REQUEST",
+      "http_status": 400,
+      "description": "public_key 형식 오류"
+     },
+     {
+      "code": "UNAUTHORIZED",
+      "http_status": 401,
+      "description": "인증 실패"
+     },
+     {
+      "code": "FORBIDDEN",
+      "http_status": 403,
+      "description": "접근 권한 없음 — 정산 데이터 접근통제 적용"
+     },
+     {
+      "code": "SETTLEMENT_NOT_FOUND",
+      "http_status": 404,
+      "description": "해당 public_key의 정산 없음"
+     }
+    ],
+    "acceptance_criteria": [
+     "진입 가능",
+     "정산 확인 수행 가능",
+     "확인 가능",
+     "완료 가능"
+    ],
+    "pagination": null,
+    "exposure": "internal",
+    "provenance": {
+     "endpoint_id": "fact",
+     "feature_ref": "fact",
+     "security_ref": "fact",
+     "request_schema": "inference",
+     "success_cases": "inference",
+     "error_cases": "inference",
+     "acceptance_criteria": "fact"
+    }
+   },
+   {
+    "endpoint_id": "EP-STL-002",
+    "method": "GET",
+    "path": "/api/v1/settlements",
+    "feature_ref": "정산 확인",
+    "security_ref": "정산 데이터 무결성·접근통제",
+    "request_schema": [
+     {
+      "name": "cursor",
+      "type": "string",
+      "required": false,
+      "format": "opaque cursor token",
+      "min": null,
+      "max": null,
+      "enum": null
+     },
+     {
+      "name": "limit",
+      "type": "integer",
+      "required": false,
+      "format": "1–100",
+      "min": 1,
+      "max": 100,
+      "enum": null
+     }
+    ],
+    "success_cases": [
+     {
+      "code": "SETTLEMENTS_LISTED",
+      "http_status": 200,
+      "description": "정산 목록 조회 성공 — cursor pagination 적용, 재무데이터 접근통제 적용"
+     }
+    ],
+    "error_cases": [
+     {
+      "code": "INVALID_REQUEST",
+      "http_status": 400,
+      "description": "파라미터 형식 오류"
+     },
+     {
+      "code": "UNAUTHORIZED",
+      "http_status": 401,
+      "description": "인증 실패"
+     },
+     {
+      "code": "FORBIDDEN",
+      "http_status": 403,
+      "description": "접근 권한 없음"
+     }
+    ],
+    "acceptance_criteria": [
+     "진입 가능",
+     "정산 확인 수행 가능",
+     "확인 가능"
+    ],
+    "pagination": {
+     "request": [
+      "cursor",
+      "limit"
+     ],
+     "response": [
+      "items",
+      "next_cursor"
+     ],
+     "note": "가변·대량 목록 — cursor pagination 적용"
+    },
+    "exposure": "internal",
+    "provenance": {
+     "endpoint_id": "fact",
+     "feature_ref": "fact",
+     "security_ref": "fact",
+     "request_schema": "inference",
+     "success_cases": "inference",
+     "error_cases": "inference",
+     "acceptance_criteria": "fact"
+    }
+   }
+  ]
+ },
+ "entities": [
+  {
+   "name": "Application",
+   "source": "feature:개인 신청",
+   "identifiers": {
+    "pk": {
+     "type": "bigint",
+     "strategy": "auto-increment",
+     "note": "내부 FK 전용, 외부 미노출"
+    },
+    "business_key": {
+     "type": "string",
+     "format": "APP-{YYYYMMDD}-{seq5}",
+     "example": "APP-20250101-00001",
+     "note": "검색·운영용"
+    },
+    "public_key": {
+     "type": "string",
+     "format": "random-alphanumeric-12",
+     "example": "A7kR2mXpQn4T",
+     "note": "URL·API 응답 노출 전용"
+    }
+   },
+   "fields": [
+    {
+     "name": "name",
+     "type": "string"
+    },
+    {
+     "name": "phone",
+     "type": "string"
+    },
+    {
+     "name": "email",
+     "type": "string"
+    },
+    {
+     "name": "status",
+     "type": "enum"
+    },
+    {
+     "name": "created_at",
+     "type": "datetime"
+    },
+    {
+     "name": "updated_at",
+     "type": "datetime"
+    }
+   ],
+   "relations": [
+    {
+     "to": "Reservation",
+     "type": "one-to-many",
+     "note": "신청자가 여러 매치를 예약할 수 있음"
+    }
+   ],
+   "provenance": {}
+  },
+  {
+   "name": "Reservation",
+   "source": "feature:매치 예약",
+   "identifiers": {
+    "pk": {
+     "type": "bigint",
+     "strategy": "auto-increment",
+     "note": "내부 FK 전용, 외부 미노출"
+    },
+    "business_key": {
+     "type": "string",
+     "format": "RES-{YYYYMMDD}-{seq5}",
+     "example": "RES-20250101-00001",
+     "note": "검색·운영용"
+    },
+    "public_key": {
+     "type": "string",
+     "format": "random-alphanumeric-12",
+     "example": "R3xN8vLqWm6Y",
+     "note": "URL·API 응답 노출 전용"
+    }
+   },
+   "fields": [
+    {
+     "name": "application_pk",
+     "type": "bigint"
+    },
+    {
+     "name": "match_datetime",
+     "type": "datetime"
+    },
+    {
+     "name": "venue",
+     "type": "string"
+    },
+    {
+     "name": "status",
+     "type": "enum"
+    },
+    {
+     "name": "idempotency_key",
+     "type": "string"
+    },
+    {
+     "name": "version",
+     "type": "integer"
+    },
+    {
+     "name": "created_at",
+     "type": "datetime"
+    },
+    {
+     "name": "updated_at",
+     "type": "datetime"
+    }
+   ],
+   "relations": [
+    {
+     "to": "Application",
+     "type": "many-to-one"
+    },
+    {
+     "to": "Settlement",
+     "type": "one-to-one",
+     "note": "예약 1건당 정산 1건 가능"
+    }
+   ],
+   "provenance": {}
+  },
+  {
+   "name": "Settlement",
+   "source": "feature:정산 확인",
+   "identifiers": {
+    "pk": {
+     "type": "bigint",
+     "strategy": "auto-increment",
+     "note": "내부 FK 전용, 외부 미노출"
+    },
+    "business_key": {
+     "type": "string",
+     "format": "STL-{YYYYMMDD}-{seq5}",
+     "example": "STL-20250101-00001",
+     "note": "검색·운영용"
+    },
+    "public_key": {
+     "type": "string",
+     "format": "random-alphanumeric-12",
+     "example": "S9wP5cZkJf2H",
+     "note": "URL·API 응답 노출 전용"
+    }
+   },
+   "fields": [
+    {
+     "name": "reservation_pk",
+     "type": "bigint"
+    },
+    {
+     "name": "amount",
+     "type": "decimal"
+    },
+    {
+     "name": "currency",
+     "type": "string"
+    },
+    {
+     "name": "status",
+     "type": "enum"
+    },
+    {
+     "name": "settled_at",
+     "type": "datetime"
+    },
+    {
+     "name": "created_at",
+     "type": "datetime"
+    },
+    {
+     "name": "updated_at",
+     "type": "datetime"
+    }
+   ],
+   "relations": [
+    {
+     "to": "Reservation",
+     "type": "one-to-one"
+    }
+   ],
+   "provenance": {}
+  }
+ ],
+ "artifact_refs": [
+  {
+   "path": "routes/EP-APP-001.py",
+   "kind": "route_stub",
+   "checksum": "d226f61348940d41",
+   "bytes": 324,
+   "endpoint_id": "EP-APP-001"
+  },
+  {
+   "path": "routes/EP-APP-002.py",
+   "kind": "route_stub",
+   "checksum": "d4e0ee31358a46e2",
+   "bytes": 348,
+   "endpoint_id": "EP-APP-002"
+  },
+  {
+   "path": "routes/EP-APP-003.py",
+   "kind": "route_stub",
+   "checksum": "85a9004cdc7fb79a",
+   "bytes": 322,
+   "endpoint_id": "EP-APP-003"
+  },
+  {
+   "path": "routes/EP-RES-001.py",
+   "kind": "route_stub",
+   "checksum": "8ad2fabed100e900",
+   "bytes": 287,
+   "endpoint_id": "EP-RES-001"
+  },
+  {
+   "path": "routes/EP-RES-002.py",
+   "kind": "route_stub",
+   "checksum": "919793db3e3927fd",
+   "bytes": 311,
+   "endpoint_id": "EP-RES-002"
+  },
+  {
+   "path": "routes/EP-RES-003.py",
+   "kind": "route_stub",
+   "checksum": "20083080ead0aa28",
+   "bytes": 285,
+   "endpoint_id": "EP-RES-003"
+  },
+  {
+   "path": "routes/EP-RES-004.py",
+   "kind": "route_stub",
+   "checksum": "510955b160c5b331",
+   "bytes": 315,
+   "endpoint_id": "EP-RES-004"
+  },
+  {
+   "path": "routes/EP-STL-001.py",
+   "kind": "route_stub",
+   "checksum": "ba6bb0c216c4b066",
+   "bytes": 311,
+   "endpoint_id": "EP-STL-001"
+  },
+  {
+   "path": "routes/EP-STL-002.py",
+   "kind": "route_stub",
+   "checksum": "60ef75126af630e7",
+   "bytes": 285,
+   "endpoint_id": "EP-STL-002"
+  }
+ ],
+ "open_questions": [
+  "[EP-APP-001] 개인 신청 시 수집할 PII 필드의 최소수집 범위를 확정해야 함 — 현재 name/phone/email 은 provisional(inference). 보안정책 및 개인정보처리방침 근거로 팀 결정 필요.",
+  "[EP-APP-002] 개인 신청 조회(GET) 응답 시 PII 마스킹 수준 미정 — 전화번호 뒤 4자리 노출, 이메일 도메인 부분 노출 등 마스킹 정책을 별도 정의해야 함.",
+  "[EP-RES-001] idempotency_key 수신 시 처리 방식 미확정 — 기존 예약을 200으로 재반환할지, 별도 응답 코드를 사용할지 팀 내 합의 필요. RESERVATION_DUPLICATE_ACCEPTED(200)는 provisional.",
+  "[EP-RES-004] 낙관적 잠금(ETag) 적용 여부 및 if_match 값 전달 방식(HTTP 헤더 If-Match vs 요청 바디 필드) 결정 필요 — 현재 바디 필드(if_match)로 provisional 설계.",
+  "[EP-STL-WRITE] 정산 생성·수정 엔드포인트(POST /api/v1/settlements 등) 추가 여부 미확정 — 입력 features에 '정산 확인'만 명시되어 있어 WRITE 엔드포인트 추가는 근거 없음. 정산 생성 주체(시스템 자동/관리자 수동)를 확정한 후 별도 설계 필요.",
+  "[DIFF-MANAGER] 차별 기능 '매니저 배정 자동화'는 Derived/inference 기능이며 acceptance_criteria 없음 — 실데이터 검증 후 별도 엔드포인트(예: PATCH /api/v1/reservations/{public_key}/manager-assignment) 설계 여부 결정 필요.",
+  "[DIFF-SETTLE-TRANSPARENCY] 차별 기능 '정산 투명성'은 Derived/inference 기능이며 acceptance_criteria 없음 — 기존 정산 확인 기능과의 차별점(세부 내역 breakdown, 감사 로그 등) 구체화 후 별도 엔드포인트 필요 여부 결정 필요.",
+  "[AUTH-GLOBAL] 모든 엔드포인트에 401/403 적용하였으나 인증 수단(JWT/세션/OAuth2 등)이 security 입력에 명시되지 않음 — 인증 미들웨어 스펙(토큰 형식, 만료 정책, refresh 전략) 별도 정의 필요."
+ ],
+ "provenance": {
+  "endpoints": "per_item",
+  "entities": "fact — Application(feature:개인 신청), Reservation(feature:매치 예약), Settlement(feature:정산 확인)",
+  "request_schema": "inference — PII 필드 목록 provisional, 최소수집 범위 확정 필요",
+  "acceptance_criteria": "fact — features.acceptance_criteria 직접 매핑",
+  "domain_cases": "fact — RESERVATION_CONFLICT·RESERVATION_VERSION_CONFLICT는 security_ref '예약 변조 방지·동시성 제어' 근거",
+  "standard_cases": "inference — 200/201/400/401/403/404는 메서드·권한에서 자동 도출",
+  "pagination_exclusion_note": "단건 조회(GET /{public_key}) 및 WRITE 엔드포인트(POST/PATCH)는 소량/단건 — cursor pagination 제외"
+ }
+}

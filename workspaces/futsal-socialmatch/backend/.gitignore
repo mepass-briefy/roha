@@ -1,0 +1,4 @@
+app.db
+smoke.db
+__pycache__/
+*.pyc
