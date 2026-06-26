@@ -333,13 +333,7 @@ export default function App() {
   const [devices, setDevices] = useState([]);
   const toggleDevice = (k) => setDevices((d) => (d.includes(k) ? d.filter((x) => x !== k) : [...d, k]));
 
-  // 2축: 테마(indigo|coral) + 모드(light|dark) 토글·저장(localStorage).
-  const [theme, setTheme] = useState(() => (document.documentElement.getAttribute("data-theme") === "coral" ? "coral" : "indigo"));
-  const applyTheme = (t) => {
-    document.documentElement.setAttribute("data-theme", t);
-    try { localStorage.setItem("roha-theme", t); } catch { /* noop */ }
-    setTheme(t);
-  };
+  // 테마는 인디고 고정(index.html). 모드(light|dark)만 토글·저장.
   const [mode, setMode] = useState(() => (document.documentElement.getAttribute("data-mode") === "dark" ? "dark" : "light"));
   const applyMode = (m) => {
     if (m === "dark") document.documentElement.setAttribute("data-mode", "dark");
@@ -398,13 +392,6 @@ export default function App() {
           </div>
         </div>
         <div className="sb-bottom">
-          <div>
-            <div className="seg-label">테마</div>
-            <div className="seg">
-              <button className={theme === "indigo" ? "on" : ""} onClick={() => applyTheme("indigo")}>인디고</button>
-              <button className={theme === "coral" ? "on" : ""} onClick={() => applyTheme("coral")}>코랄</button>
-            </div>
-          </div>
           <div>
             <div className="seg-label">모드</div>
             <div className="seg">
