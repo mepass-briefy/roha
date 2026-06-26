@@ -15,6 +15,7 @@ features는 외부 사실 검색이 아니라 '요구를 펼치는' 역할이다
 
 import json
 import os
+import re
 from pathlib import Path
 
 try:
@@ -208,6 +209,23 @@ def make_real_llm(model=REAL_MODEL_DEFAULT, max_tokens=8192, max_searches=WEB_SE
 real_llm = make_real_llm()
 
 
+# discovery open_question이 인용한 '모호 요구' 용어 추출용(작은따옴표·홑낫표·큰따옴표).
+_QUOTED_RE = re.compile(r"['‘’“”「」\"]([^'‘’“”「」\"]{2,24})['‘’“”「」\"]")
+
+
+def _ambiguous_terms(discovery: dict):
+    """discovery open_question이 인용한 미해결(모호) 요구 용어 집합.
+    real discovery는 모호 요구를 '연결'·'가치 교환'처럼 인용한다. offline(목표·맥락 수준 open_q)은 요구 용어를
+    인용하지 않아 빈 집합 -> 과추론 표식 0(정상 보완 과차단 방지)."""
+    terms = set()
+    for q in (discovery.get("open_questions") or []):
+        for m in _QUOTED_RE.findall(str(q)):
+            t = m.strip()
+            if t:
+                terms.add(t)
+    return terms
+
+
 def produce(inputs: dict, llm=offline_llm) -> dict:
     intake = inputs["intake"]
     ux = inputs.get("ux", {})
@@ -217,7 +235,17 @@ def produce(inputs: dict, llm=offline_llm) -> dict:
     raw = llm(SYSTEM_PROMPT, build_user_prompt(intake, ux, security, strategy))
     raw = raw.replace("```json", "").replace("```", "").strip()
     body = json.loads(raw)
-    return validate(body)
+    body = validate(body)
+    # [방식 B 태깅] discovery가 모호로 표시한 요구를 features가 구체화했는지 표식.
+    # 게이트가 이 표식 + origin=fact를 WARN[과추론]으로 surface(사람 확정 신호). 산출 의미 불변(주석 필드만 추가).
+    amb = _ambiguous_terms(discovery)
+    for f in body.get("features", []):
+        chain = (str(f.get("source", "")) + " " + str(f.get("feature", ""))).lower()
+        hit = next((t for t in amb if t.lower() in chain), None)
+        f["source_ambiguous"] = bool(hit)
+        if hit:
+            f["ambiguous_requirement"] = hit
+    return body
 
 
 def make_producer(llm=offline_llm):

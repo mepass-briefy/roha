@@ -176,6 +176,12 @@ def contract_levels(record_type, body):
             # 5) 품질: 완결성(수용 기준) 빈약
             if not (f.get("acceptance_criteria") or []):
                 warns.append(f"[품질] feature '{nm}' 수용 기준(acceptance_criteria) 빈약")
+            # 7) 과추론(품질=WARN, 차단 아님): discovery가 모호로 표시한 요구를 핵심 기능(origin=fact)으로 구체화.
+            #    features는 사람 구간이므로 ERROR로 막지 않고 표시 — 사람이 확정 시 '이건 추론'을 보고 거른다(CLAUDE.md 3.7).
+            #    정상 보완(명확 요구 세분, 또는 origin=inference로 정직 표기된 supplement)은 걸리지 않는다.
+            if f.get("source_ambiguous") and f.get("origin") == "fact":
+                amb_req = f.get("ambiguous_requirement", "?")
+                warns.append(f"[과추론] feature '{nm}'가 모호 요구('{amb_req}')를 핵심 기능(fact)으로 구체화 — 사람 확정 필요")
         # 6) 커버리지(품질): discovery 목표 대조는 body에 discovery_index가 없어 생략(형식 검사로 유지).
 
     elif record_type == "design_system":
